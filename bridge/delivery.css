@@ -1,0 +1,167 @@
+.delivery-main{display:grid;align-content:start;gap:16px;min-width:0}
+.delivery-card{
+  min-width:0;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--panel);
+  box-shadow:var(--shadow-sm);
+  overflow:hidden;
+}
+.delivery-bar{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  padding:14px 18px;
+}
+.delivery-bar label{
+  display:grid;
+  gap:5px;
+  color:#475569;
+  font-size:11px;
+  font-weight:600;
+  min-width:0;
+}
+.delivery-bar :is(select,button){
+  min-height:34px;
+  padding:6px 11px;
+  border-radius:8px;
+}
+.delivery-bar select{max-width:100%}
+.delivery-view-controls,.delivery-transport>div{display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap}
+.delivery-stage{
+  min-height:240px;
+  max-height:360px;
+  overflow:auto;
+  background:#0f172a;
+  color-scheme:dark;
+  border-block:1px solid var(--border);
+}
+.delivery-stage[data-background=light]{background:#f8fafc;color-scheme:light}
+.delivery-stage[data-background=checker]{background:repeating-conic-gradient(#e4e8f0 0 25%,#f4f6fa 0 50%) 0/24px 24px;color-scheme:light}
+.delivery-stage canvas{display:block;image-rendering:pixelated;margin-inline:auto;max-width:none}
+.delivery-transport{align-items:center}
+.delivery-transport .mono{font-size:11px;color:#64748b;font-weight:500}
+.delivery-strip{
+  display:flex;
+  gap:8px;
+  overflow-x:auto;
+  padding:4px 18px 12px;
+  scroll-padding-inline:18px;
+}
+body.atelier-shell .delivery-strip button{
+  display:grid;
+  gap:4px;
+  justify-items:center;
+  flex:0 0 auto;
+  padding:5px 6px 6px;
+  background:#f8fafc;
+  border-color:#cbd5e1;
+  border-radius:8px;
+  color:#334155;
+  font:600 10px/1.4 Menlo,monospace;
+}
+.delivery-strip button canvas{
+  background:#1e293b;
+  border-radius:5px;
+  image-rendering:pixelated;
+}
+body.atelier-shell .delivery-strip [aria-current=true]{
+  border-color:#6366f1;
+  background:#eef2ff;
+  color:#4338ca;
+  box-shadow:0 0 0 2px rgba(99,102,241,0.18);
+}
+.delivery-strip button.has-issue{box-shadow:inset 0 -3px #d97706}
+.delivery-strip button.has-event span::before{content:'◆ ';color:#4f46e5}
+.delivery-frame-tools{justify-content:flex-start;border-top:1px solid var(--border);background:#f8fafc}
+body.atelier-shell #deliveryEvent[aria-pressed=true]{
+  border-color:#6366f1;
+  color:#4338ca;
+  background:#eef2ff;
+  font-weight:600;
+}
+.delivery-events{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px;
+  margin:0;
+  padding:10px 18px 14px;
+  color:#64748b;
+  font-size:12px;
+  line-height:1.65;
+  background:#f8fafc;
+}
+.delivery-events button{padding:4px 8px;font-size:11px!important}
+.delivery-checks,.delivery-manual{padding:18px 20px}
+.delivery-card h3{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  font-size:15px;
+  font-weight:700;
+  margin:0;
+  color:#0f172a;
+}
+#deliveryCheckSummary,#atelierReviewCount{
+  color:#0f766e;
+  background:#f0fdfa;
+  border:1px solid #ccfbf1;
+  padding:2px 9px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:600;
+}
+#deliveryCheckSummary[data-warning=true]{
+  color:#b45309;
+  background:#fffbeb;
+  border-color:#fde68a;
+}
+.delivery-checks p{font-size:12px;color:#64748b;line-height:1.65;margin:10px 0 0}
+#deliveryFindings{max-height:240px;overflow:auto}
+.delivery-finding{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:10px 0;
+  border-top:1px solid #f1f5f9;
+  font-size:12px;
+  line-height:1.5;
+}
+.delivery-finding:first-child,#atelierChecklist{margin-top:12px}
+.delivery-finding span:first-child{
+  color:#b45309;
+  background:#fffbeb;
+  border:1px solid #fde68a;
+  padding:2px 7px;
+  border-radius:6px;
+  font-size:11px;
+  font-weight:600;
+}
+.delivery-finding span[data-problem=true]{
+  color:#b91c1c;
+  background:#fef2f2;
+  border-color:#fecaca;
+}
+.delivery-finding button{padding:5px 10px}
+#atelierChecklist label{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  padding:10px 0;
+  border-top:1px solid #f1f5f9;
+  font-size:13px;
+  color:#334155;
+  line-height:1.55;
+  cursor:pointer;
+}
+#atelierChecklist input{margin:2px 0 0}
+@media(max-width:760px){
+  .delivery-stage{max-height:280px}
+  .delivery-bar{padding-inline:12px}
+  .delivery-strip{padding-inline:12px;scroll-padding-inline:12px}
+}

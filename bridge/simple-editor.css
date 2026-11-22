@@ -1,0 +1,76 @@
+/* Beginner editor: view, adjust rhythm, export. Advanced controls remain intact. */
+#simpleEditorControls{display:none}
+.se-mode-tools{display:flex;gap:10px}
+.editor-simple.atelier-editing .shell{grid-template-columns:minmax(0,1fr) 320px;margin-top:4px}
+.editor-simple.atelier-editing .main-area{grid-column:1}
+.editor-simple.atelier-editing .left-panel,.editor-simple.atelier-editing .inspector{display:none!important}
+.editor-simple.atelier-editing #simpleEditorControls{
+  display:block;
+  grid-column:2;
+  grid-row:1;
+  background:#ffffff;
+  border-left:1px solid var(--border);
+  padding:22px;
+}
+.editor-simple.atelier-editing .workspace-toolbar .toolbar-buttons,
+.editor-simple.atelier-editing .version-section,
+.editor-simple.atelier-editing #gridToggle,
+.editor-simple.atelier-editing #groundToggle,
+.editor-simple.atelier-editing #onionToggle,
+.editor-simple.atelier-editing #playSpeed{display:none}
+.editor-simple.atelier-editing .stage{height:clamp(340px,50dvh,600px)}
+.editor-simple.atelier-editing .timeline-toolbar{flex-wrap:wrap;gap:12px}
+.editor-simple.atelier-editing .timeline-toolbar strong{font-size:13px;font-weight:700;color:#0f172a}
+.editor-simple.atelier-editing .timeline-toolbar .control-group{gap:9px}
+.editor-simple.atelier-editing .timeline{min-height:128px;padding:6px 4px 10px}
+.editor-simple.atelier-editing .frame-card canvas{width:94px;height:94px}
+.editor-simple.atelier-editing .frame-card{flex-basis:96px}
+.editor-simple.atelier-editing .topbar #exportTop,
+.editor-simple.atelier-editing .topbar #saveProject,
+.editor-simple.atelier-editing .topbar .project-name{display:none}
+.editor-simple.atelier-editing .workspace-toolbar{background:#f8fafc}
+.se-section{
+  padding:14px 16px;
+  margin-bottom:14px;
+  background:#f8fafc;
+  border:1px solid #e2e8f0;
+  border-radius:12px;
+}
+.se-section:last-child{margin-bottom:0}
+.se-number{
+  display:inline-block;
+  font:700 10px/1.4 Menlo,monospace;
+  color:#4f46e5;
+  background:#eef2ff;
+  border:1px solid #c7d2fe;
+  padding:2px 7px;
+  border-radius:999px;
+  letter-spacing:.8px;
+}
+.se-section h3{font-size:15px;font-weight:700;margin:8px 0 6px;letter-spacing:-.2px;color:#0f172a}
+.se-section p{font-size:12px;color:#475569;line-height:1.75;margin:0 0 10px}
+.se-label{font-size:12px;font-weight:600;color:#334155;display:block;margin:12px 0 6px}
+.se-section select{width:100%;padding:9px 11px}
+.se-section .se-summary{font-size:11px;color:#64748b;line-height:1.75;margin:8px 0 0}
+.se-speed{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.se-speed button{padding:10px 4px!important;font-size:11px!important;white-space:normal}
+.se-speed button[aria-pressed=true]{color:#4338ca!important;background:#eef2ff!important;border-color:#818cf8!important;font-weight:650}
+.se-section details{font-size:12px;line-height:1.8;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 11px;margin-top:10px}
+.se-section details summary{cursor:pointer;color:#1e293b;font-weight:600}
+.se-section details p{margin-top:8px}
+.se-holds{display:flex;gap:6px;flex-wrap:wrap}
+.se-holds button{font-size:11px!important;padding:6px 10px!important;flex:1}
+.se-check{font-size:12px;font-weight:500;display:flex;gap:8px;align-items:center;margin:10px 0;color:#334155}
+.se-nudge{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.se-nudge button{font-size:16px!important;height:36px}
+#seUndo{width:100%;font-size:11px!important;margin-top:6px}
+.se-export>button{display:block;width:100%;margin:8px 0;padding:11px 8px!important;white-space:normal}
+.se-empty{padding:28px;background:linear-gradient(135deg,#f8faff,#eef2ff);border-bottom:1px solid #c7d2fe}
+.se-empty h3{font-size:19px;font-weight:750;margin:0 0 8px;color:#0f172a}
+.se-empty p{font-size:13px;line-height:1.75;color:#475569;margin-bottom:14px}
+.se-empty button{margin-right:8px}
+.atelier-shell .se-mode-tools #seMode[aria-pressed=true]{background:#eef2ff;color:#4338ca;border-color:#818cf8;font-weight:600}
+.editor-simple .stage-caption #canvasHint{display:none}
+@media(max-width:1050px){.editor-simple.atelier-editing .shell{grid-template-columns:minmax(0,1fr) 280px}.editor-simple.atelier-editing #simpleEditorControls{padding:16px}.editor-simple.atelier-editing .stage{height:380px}.editor-simple.atelier-editing .viewport-controls{flex-wrap:wrap}}
+@media(max-width:760px){.editor-simple.atelier-editing .shell{display:flex;flex-direction:column}.editor-simple.atelier-editing .main-area{order:0}.editor-simple.atelier-editing #simpleEditorControls{order:1;display:block;border-left:0;border-top:1px solid var(--border);padding:18px}.editor-simple.atelier-editing .stage{height:330px}.se-mode-tools{flex-wrap:wrap;gap:6px;justify-content:flex-end}.se-mode-tools button{font-size:11px!important;padding:7px 10px}.se-speed{grid-template-columns:repeat(3,minmax(0,1fr))}.se-speed button{font-size:11px!important;padding:9px 3px!important}.editor-simple.atelier-editing .frame-card canvas{width:80px;height:80px}.editor-simple.atelier-editing .frame-card{flex-basis:82px}.se-empty{padding:20px}.se-export>button{padding:12px!important}.editor-simple.atelier-editing .workspace-toolbar{padding:11px}.editor-simple .stage-caption{font-size:8px}}
+.editor-simple .stage-caption,.editor-simple #zoomLabel,.editor-simple .frame-time{display:none}

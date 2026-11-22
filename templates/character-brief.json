@@ -1,0 +1,119 @@
+{
+  "document_type": "design_brief_template_not_executable_cli_profile",
+  "status": "DRAFT_REQUIRES_MASTER_SELECTION",
+  "character_id": null,
+  "character_revision": null,
+  "weapon_revision": null,
+  "project": {
+    "game_entry": null,
+    "view": "side_scrolling_2d",
+    "directions": [
+      "right",
+      "left"
+    ],
+    "mirror_left_requires_visual_review": true
+  },
+  "master": {
+    "identity_reference": null,
+    "native_ready_frame": null,
+    "selection_record": null,
+    "standing_height_px": null,
+    "head_width_px": null,
+    "body_proportion_description": null,
+    "style_invariants": []
+  },
+  "weapon": {
+    "reference": null,
+    "blade_tip_to_guard_px": null,
+    "blade_width_px": null,
+    "handle_length_px": null,
+    "blade_to_standing_height_ratio": null,
+    "grip_points": [],
+    "requires_straight_common_axis": true,
+    "cross_action_revision_audit": "pending",
+    "measurement_tolerance": null
+  },
+  "production": {
+    "route": "whole_body_frame_by_frame",
+    "parts_assembly": false,
+    "weapon_assembly": false,
+    "image_tool": "user_selected_image_generator",
+    "save_prompts_and_sources": true,
+    "source_cell_aspect_ratio_preserved": true,
+    "scale_fixed_per_source_sheet": true,
+    "scale_target": "master_standing_height",
+    "per_pose_bbox_resizing": false
+  },
+  "pixels": {
+    "palette_file": null,
+    "palette_frozen": false,
+    "sampling": "nearest",
+    "alpha_values": [
+      0,
+      255
+    ],
+    "native_review_required": true
+  },
+  "motion": {
+    "coordinate_origin": "top_left",
+    "x_positive": "right",
+    "y_positive": "down",
+    "root_motion_policy": "in_place_code_owned_world_motion",
+    "default_root_motion_px": [
+      0,
+      0
+    ],
+    "alignment_requires_pose_semantics": true,
+    "align_all_lowest_toes_to_floor": false,
+    "align_alpha_bbox_center": false
+  },
+  "actions": [
+    {
+      "id": null,
+      "revision": null,
+      "direction": "right",
+      "source_sheet": null,
+      "source_grid": null,
+      "source_cell_aspect_ratio": null,
+      "frame_size_px": null,
+      "pivot_px": null,
+      "safety_margin_px": null,
+      "key_pose_count": null,
+      "duration_ms": null,
+      "frame_durations_ms": [],
+      "events": {},
+      "event_index_origin": 0,
+      "loop_runtime": false,
+      "loop_preview": true,
+      "next_state": null,
+      "visual_review": "pending",
+      "engine_review": "pending",
+      "user_signoff": "pending"
+    }
+  ],
+  "export": {
+    "png_frames": true,
+    "atlas_png": true,
+    "animation_json": true,
+    "gif_preview": true,
+    "integer_preview_scale": 4,
+    "gif_time_step_ms": null
+  },
+  "verification": {
+    "technical": "pending",
+    "visual": "pending",
+    "engine": "pending",
+    "cross_action_identity_and_weapon": "pending",
+    "user_signoff": "pending",
+    "reports": [],
+    "known_gaps": []
+  },
+  "notes": [
+    "All null values must be resolved before the corresponding production gate.",
+    "Canvas dimensions and palette count are project choices, not universal pixel-art standards.",
+    "A fixed logical pivot does not force all visible toes or head tops to have the same height.",
+    "If whole-frame translation cannot preserve both intended gait and ground contact, redraw the complete pose.",
+    "A weapon revision affects every action using that weapon."
+  ],
+  "brief_version": "0.2"
+}
