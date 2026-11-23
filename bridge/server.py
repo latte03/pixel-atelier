@@ -1,4 +1,4 @@
-"""Loopback-only reference-to-image workbench using native Codex app-server."""
+"""Loopback reference-to-image workbench: custom API keys or native Codex app-server."""
 import argparse,base64,hashlib,http.cookies,io,json,queue,re,secrets,threading,time,uuid
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from pathlib import Path
@@ -9,6 +9,10 @@ try:from .projects import ProjectStore,Conflict,create_knight,create_from_master
 except ImportError:from projects import ProjectStore,Conflict,create_knight,create_from_master,export_character,palette_for,render_action,save_idle_gif
 try:from .rpc import BridgeError,CodexClient,inspect_sprite_png
 except ImportError:from rpc import BridgeError,CodexClient,inspect_sprite_png
+try:from .settings import Settings
+except ImportError:from settings import Settings
+try:from .clients import ImageAPIClient,LLMClient,fetch_models
+except ImportError:from clients import ImageAPIClient,LLMClient,fetch_models
 
 try:from .production import Production
 except ImportError:from production import Production
@@ -16,6 +20,7 @@ except ImportError:from production import Production
 ROOT=Path(__file__).resolve().parents[1];WORK=ROOT/'work'/'image-workbench';WORK.mkdir(parents=True,exist_ok=True)
 KNIGHT_SAMPLE=ROOT/'examples'/'knight'
 PROJECTS=ProjectStore(WORK/'projects')
+SETTINGS=Settings(WORK/'config.json')
 JOBS={};LOCK=threading.Lock();Q=queue.Queue();TOKEN=secrets.token_urlsafe(32)
 
 def record(job):
@@ -56,21 +61,71 @@ def recover_timed_out_job(job):
         return
 
 
+def layout_constraint(layout,kind='pose'):
+    """Describe the sheet layout the polished prompt must keep, from the real job options."""
+    if kind!='sheet':
+        return '单张完整角色姿势图（不要生成表格）','完整角色居中'
+    cols,rows,count=(layout or {}).get('cols'),(layout or {}).get('rows'),(layout or {}).get('count')
+    if isinstance(cols,int) and isinstance(rows,int) and cols>0 and rows>0:
+        grid=f'{cols}列×{rows}行表格'+(f'（共{count}个关键姿势）' if isinstance(count,int) and count>0 else '')
+    else:
+        grid='用户指定的表格行列数（不得改成其他排版）'
+    return grid,'每格一名完整角色'
+
+
+def polish_prompt(prompt,llm_cfg,event,layout=None,kind='pose'):
+    """Optionally rewrite the Chinese brief into an English image prompt via the custom LLM."""
+    if not llm_cfg.get('polish_prompt'):return prompt
+    grid,subject=layout_constraint(layout,kind)
+    try:
+        client=LLMClient(llm_cfg['base_url'],llm_cfg['api_key'],llm_cfg['model'])
+        polished=client.chat(
+            prompt,
+            system=('你是像素游戏动作图表的提示词工程师。把用户的中文制作要求改写为一段面向图像生成模型的英文提示词。'
+                    f'必须保留全部硬性约束：{grid}、透明背景、{subject}、统一比例与装备、无文字无边框。'
+                    '把角色设定与动作过程翻译成具体视觉描述。只输出英文提示词正文，不要任何解释。'),
+        )
+        if not polished:raise BridgeError('文本模型返回空提示词')
+        event({'type':'prompt_polish','status':'ok','layout':grid})
+        return polished
+    except Exception as e:
+        event({'type':'prompt_polish','status':'failed','message':str(e)[:200]})
+        return prompt
+
+
+def run_generation_job(job,event):
+    reference=WORK/job['id']/'reference.png'
+    reference=reference if reference.is_file() else None
+    cfg=SETTINGS.raw()
+    if cfg.get('provider')=='codex':
+        client=CodexClient(event)
+        try:
+            result=client.generate(reference,job['prompt'],WORK/job['id'],timeout=240)
+        finally:
+            client.close()
+        return result
+    icfg=SETTINGS.image_config()
+    prompt=polish_prompt(job['prompt'],cfg['llm'],event,job.get('layout') or {},job.get('kind') or 'pose')
+    client=ImageAPIClient(icfg['base_url'],icfg['api_key'],icfg['model'],icfg.get('size',''),
+                          icfg.get('response_format',''),on_event=event,timeout=int(icfg.get('timeout') or 300))
+    try:
+        return client.generate(prompt,reference,WORK/job['id'])
+    finally:
+        client.close()
+
+
 def worker():
     while True:
-        jid=Q.get();job=JOBS[jid];client=None
+        jid=Q.get();job=JOBS[jid]
         try:
             job.update(status='running');record(job)
             def event(e):
                 job['events'].append(e);record(job)
-            client=CodexClient(event)
-            reference=WORK/jid/'reference.png'
-            result=client.generate(reference if reference.is_file() else None,job['prompt'],WORK/jid,timeout=240)
+            result=run_generation_job(job,event)
             path=Path(result['images'][-1])
             complete_job(job,path,result['model'],result['completion'])
         except Exception as e:job.update(status='failed',error=str(e))
         finally:
-            if client:client.close()
             job['finished_at']=time.time();record(job);Q.task_done()
 
 def enqueue_generation(data):
@@ -105,6 +160,24 @@ def generation_busy():
     return any(j['status'] in ('queued','running') for j in list(JOBS.values()))
 
 
+def api_models(kind):
+    if kind not in ('image','llm'):raise ValueError('无效模型类型')
+    section=SETTINGS.raw()[kind]
+    if not section.get('api_key'):raise ValueError('请先在「API 设置」中填写对应的 API Key')
+    return fetch_models(section['base_url'],section['api_key'])
+
+
+def api_test(data):
+    target=data.get('target')
+    if target not in ('image','llm'):raise ValueError('无效测试目标')
+    cfg=SETTINGS.raw()[target]
+    base=str(data.get('base_url') or cfg['base_url']).strip()
+    key=str(data.get('api_key') or '').strip() or cfg['api_key']
+    if not key:raise ValueError('请先填写 API Key')
+    models=fetch_models(base,key)
+    return {'ok':True,'target':target,'models':models,'message':'连接成功，发现 %d 个模型'%len(models)}
+
+
 PRODUCTION=Production(WORK/'production',PROJECTS,JOBS,enqueue_generation,image_artifact,generation_busy)
 
 
@@ -128,11 +201,18 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host():return self.respond(403,{'error':'Invalid host'})
         if self.path=='/':
             body=(ROOT/'bridge/workbench.html').read_bytes();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('Set-Cookie','pixel_bridge='+TOKEN+'; HttpOnly; SameSite=Strict; Path=/');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
-        if self.path in ['/workbench.css','/workbench.js','/beginner.css','/beginner.js','/character.js','/character.css','/atelier.css','/atelier.js','/simple-editor.css','/simple-editor.js','/delivery.css','/delivery.js','/production.js','/production.css']:
+        if self.path in ['/workbench.css','/workbench.js','/beginner.css','/beginner.js','/character.js','/character.css','/atelier.css','/atelier.js','/simple-editor.css','/simple-editor.js','/delivery.css','/delivery.js','/production.js','/production.css','/settings.css','/settings.js']:
             kind='text/css' if self.path.endswith('.css') else 'application/javascript'
             return self.respond(200,(ROOT/'bridge'/self.path[1:]).read_bytes(),kind)
-        if self.path=='/health':return self.respond(200,{'service':'pixel-codex-bridge','transport':'native-app-server','ready':True,'generation_verified':any(j.get('status')=='completed' for j in JOBS.values())})
+        if self.path=='/health':return self.respond(200,{'service':'pixel-codex-bridge','transport':SETTINGS.raw().get('provider','custom'),'ready':True,'generation_verified':any(j.get('status')=='completed' for j in JOBS.values())})
         if not self.authorized():return self.respond(401,{'error':'Open the workbench first'})
+        if self.path=='/config':return self.respond(200,SETTINGS.masked())
+        if self.path=='/models/image':
+            try:return self.respond(200,api_models('image'))
+            except (BridgeError,ValueError,OSError) as e:return self.respond(400,{'error':str(e)})
+        if self.path=='/models/llm':
+            try:return self.respond(200,api_models('llm'))
+            except (BridgeError,ValueError,OSError) as e:return self.respond(400,{'error':str(e)})
         if self.path=='/catalog':
             local=[{'id':k,'image_url':'/catalog/'+k+'.png'} for k in ('bow','staff') if (WORK/'catalog'/(k+'.png')).is_file()]
             return self.respond(200,[{'id':'greatsword','image_url':'/catalog/greatsword.png'}]+local)
@@ -181,11 +261,13 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host() or not self.authorized():return self.respond(403,{'error':'Unauthorized'})
         origin=self.headers.get('Origin')
         if origin and origin!='http://'+self.headers.get('Host',''):return self.respond(403,{'error':'Invalid origin'})
-        if self.path not in ['/production','/jobs','/references','/references/gif-frames','/exports','/projects','/projects/knight','/projects/master','/projects/idle-gif','/projects/save','/projects/clone','/projects/freeze','/projects/export']:return self.respond(404,{'error':'Not found'})
+        if self.path not in ['/production','/jobs','/references','/references/gif-frames','/exports','/projects','/projects/knight','/projects/master','/projects/idle-gif','/projects/save','/projects/clone','/projects/freeze','/projects/export','/config','/config/test']:return self.respond(404,{'error':'Not found'})
         try:
             size=int(self.headers.get('Content-Length','0'))
             if not 0<size<=(80 if self.path.startswith('/projects') or self.path=='/production'else 17 if self.path=='/references/gif-frames'else 16)*1024*1024:raise ValueError('文件过大或请求为空')
             data=json.loads(self.rfile.read(size))
+            if self.path=='/config':return self.respond(200,SETTINGS.update(data))
+            if self.path=='/config/test':return self.respond(200,api_test(data))
             if self.path=='/production':return self.respond(200,PRODUCTION.command(data))
             if self.path=='/projects/master':return self.respond(201,PROJECTS.save(create_from_master(data)))
             if self.path=='/projects/idle-gif':return self.respond(201,save_idle_gif(PROJECTS.get(data['id']), PROJECTS, data))

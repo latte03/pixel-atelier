@@ -10,7 +10,13 @@ python bridge/server.py --port 8898
 
 ## 生成新动作
 
-安装并登录支持内置生图的 Codex CLI。工作台通过本机 Codex App Server 生成透明 PNG 图像，读取当前登录环境返回的默认模型。实际供给取决于当前账号的模型能力。托管模式自动推进动作队列，每步保留预览时间，可暂停介入。遇到无法校验的图表或失败会停在对应动作。
+工作台默认通过 **自定义生图 API**（OpenAI Images 兼容）生成透明 PNG。打开页面右上角 **「API 设置」**：
+
+- **生图 API**：填接口地址（默认 `https://corecode.live/v1`）、API Key，并选择模型（可点「拉取模型列表」，也可手填，如 `gpt-image-2.6-sunburst`）。可选输出尺寸与返回格式。有参考图时走 `/v1/images/edits`，无参考图走 `/v1/images/generations`。
+- **文本 LLM API（可选）**：填接口地址、API Key 与模型。开启「生成前润色」后，会先调用 `/v1/chat/completions` 把中文制作稿改写成英文生图提示词，失败时自动退回原文。
+- **生成通道**：默认 `custom`；仍可切回 `codex`，使用本机 Codex App Server 的内置生图（旧行为，需已登录 Codex CLI）。
+
+API Key 只保存在本机 `work/image-workbench/config.json`（Git 忽略），页面回显仅显示尾四位。托管模式自动推进动作队列，每步保留预览时间，可暂停介入。遇到无法校验的图表或失败会停在对应动作。
 
 上传、任务与角色数据保存在 `work/image-workbench/`，导出在其 `exports/` 目录。此工作目录被 Git 忽略。HTTP 服务仅监听回环地址，项目草稿和资产不会随源码发布。
 

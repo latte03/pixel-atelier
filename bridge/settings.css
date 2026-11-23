@@ -1,0 +1,108 @@
+/* API settings dialog.
+   Palette literals are scoped to the dialog itself (never read from :root), so a
+   missing theme variable can't wash out the text; body.atelier-shell flips the
+   scoped tokens to the light studio palette instead of fighting them. */
+#apiSettingsDialog{
+  --s-bg:#1c2129; --s-field:#101318; --s-line:#3c424d; --s-line-soft:#30353d;
+  --s-text:#e3e6e9; --s-label:#c9cfda; --s-muted:#8d96a3;
+  --s-accent:#e4b365; --s-accent-ink:#20190e; --s-accent-hover:#f0c580;
+  --s-btn:#20242a; --s-btn-hover:#2b3038; --s-border:#4b5564;
+  --s-backdrop:#07090cc9; --s-ring:#e4b36566; --s-radius:8px;
+  --s-ok:#91c2a2; --s-err:#efb3a3; --s-pad:25px;
+  width:min(760px,94vw);max-height:88vh;overflow:auto;
+  background:var(--s-bg);color:var(--s-text);border:1px solid var(--s-border);
+  border-radius:var(--s-radius);padding:var(--s-pad);box-shadow:0 25px 100px #00000055;
+}
+body.atelier-shell #apiSettingsDialog{
+  --s-bg:#ffffff; --s-field:#ffffff; --s-line:#cbd5e1; --s-line-soft:#e2e8f0;
+  --s-text:#0f172a; --s-label:#334155; --s-muted:#64748b;
+  --s-accent:#6366f1; --s-accent-ink:#ffffff; --s-accent-hover:#4f46e5;
+  --s-btn:#ffffff; --s-btn-hover:#f1f5f9; --s-border:#e2e8f0;
+  --s-backdrop:rgba(15,23,42,.45); --s-ring:rgba(99,102,241,.18); --s-radius:14px;
+  --s-ok:#059669; --s-err:#dc2626;
+}
+#apiSettingsDialog::backdrop{background:var(--s-backdrop)}
+#apiSettingsDialog .dialog-heading h2{color:var(--s-text);font-size:21px;letter-spacing:-.5px}
+#apiSettingsDialog .eyebrow{color:var(--s-accent)}
+#apiSettingsDialog .atelier-note{color:var(--s-muted);font-size:11px;line-height:1.8;margin:0 0 14px}
+
+/* provider row: label + select on one line, select sized by content column */
+#apiSettingsDialog .api-provider-row{
+  display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;
+  margin:0 0 14px;font-size:13px;color:var(--s-label);
+}
+#apiSettingsDialog .api-provider-row select{
+  width:100%;height:auto;min-height:0;flex:none;align-self:center;
+  background:var(--s-field);color:var(--s-text);border:1px solid var(--s-line);
+  border-radius:6px;padding:8px 10px;
+}
+body.atelier-shell #apiSettingsDialog .api-provider-row select{border-radius:8px}
+
+.api-settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px}
+@media (max-width:760px){.api-settings-grid{grid-template-columns:1fr}}
+#apiSettingsDialog fieldset{
+  border:1px solid var(--s-line-soft);border-radius:var(--s-radius);
+  padding:14px 16px 16px;display:flex;flex-direction:column;gap:11px;min-width:0;margin:0;
+}
+#apiSettingsDialog legend{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--s-accent);padding:0 6px}
+#apiSettingsDialog label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--s-label)}
+#apiSettingsDialog input,#apiSettingsDialog select{
+  width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;
+  border:1px solid var(--s-line);background:var(--s-field);color:var(--s-text);
+  font-size:13px;outline:none;
+}
+body.atelier-shell #apiSettingsDialog input,
+body.atelier-shell #apiSettingsDialog select{border-radius:8px;padding:9px 11px}
+#apiSettingsDialog input:focus,#apiSettingsDialog select:focus{
+  border-color:var(--s-accent);box-shadow:0 0 0 3px var(--s-ring);
+}
+#apiSettingsDialog input::placeholder{color:var(--s-muted)}
+.api-fields-row{display:grid;grid-template-columns:1.45fr 1fr;gap:10px}
+.api-key-hint{font-size:11px;color:var(--s-muted);min-height:1em}
+.api-check-row{display:grid!important;grid-template-columns:auto minmax(0,1fr);align-items:start;column-gap:8px!important;font-size:12px;line-height:1.7;color:var(--s-label)}
+.api-check-row input{width:auto;height:15px;margin:3px 0 0;accent-color:var(--s-accent)}
+.api-settings-actions{display:flex;gap:8px;flex-wrap:wrap}
+#apiSettingsDialog .api-settings-actions .small-button{
+  padding:6px 11px;font-size:11px;border-radius:6px;border:1px solid var(--s-line);
+  background:var(--s-btn);color:var(--s-text);cursor:pointer;box-shadow:none;
+}
+#apiSettingsDialog .api-settings-actions .small-button:hover{background:var(--s-btn-hover);border-color:var(--s-accent)}
+#apiSettingsDialog .api-settings-actions .small-button:disabled{opacity:.45;cursor:not-allowed}
+#apiSettingsDialog .microcopy{color:var(--s-muted);font-size:10px;line-height:1.8;margin:0}
+.api-status{min-height:1.2em;font-size:12px;margin:12px 0 0;color:var(--s-muted)}
+.api-status.ok{color:var(--s-ok)}
+.api-status.err{color:var(--s-err)}
+/* footer stays reachable while the dialog body scrolls */
+#apiSettingsDialog .api-settings-footer{
+  position:sticky;bottom:calc(var(--s-pad) * -1);
+  margin:16px calc(var(--s-pad) * -1) calc(var(--s-pad) * -1);
+  padding:12px var(--s-pad) 14px;
+  background:var(--s-bg);border-top:1px solid var(--s-line-soft);
+  display:flex;justify-content:flex-end;gap:10px;
+}
+/* short viewports: tighten the chrome so the whole form fits when possible */
+@media (max-height:840px){
+  #apiSettingsDialog{--s-pad:17px}
+  #apiSettingsDialog fieldset{padding:11px 13px 12px;gap:9px}
+  #apiSettingsDialog label{gap:4px}
+  #apiSettingsDialog .api-provider-row{margin-bottom:11px}
+  #apiSettingsDialog .atelier-note{margin-bottom:10px}
+  #apiSettingsDialog .api-settings-footer{margin-top:12px;padding-top:10px;padding-bottom:11px}
+}
+#apiSettingsDialog .api-settings-footer button{
+  padding:8px 18px;border-radius:6px;border:1px solid var(--s-line);
+  background:var(--s-btn);color:var(--s-text);cursor:pointer;font-size:12px;box-shadow:none;
+}
+#apiSettingsDialog .api-settings-footer button:hover{background:var(--s-btn-hover);border-color:var(--s-accent)}
+#apiSettingsDialog .api-settings-footer .primary{
+  background:var(--s-accent);border-color:var(--s-accent);color:var(--s-accent-ink);font-weight:650;
+}
+#apiSettingsDialog .api-settings-footer .primary:hover{background:var(--s-accent-hover);border-color:var(--s-accent-hover)}
+body.atelier-shell #apiSettingsDialog .api-settings-footer button{border-radius:8px}
+body.atelier-shell #apiSettingsDialog .api-settings-footer .primary{
+  background:linear-gradient(135deg,#6366f1 0%,#4f46e5 100%);border-color:#4f46e5;
+  color:#fff;box-shadow:0 2px 8px rgba(99,102,241,.28);
+}
+body.atelier-shell #apiSettingsDialog .api-settings-footer .primary:hover{
+  background:linear-gradient(135deg,#4f46e5 0%,#4338ca 100%);border-color:#4338ca;
+}

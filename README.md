@@ -23,7 +23,7 @@ python -m pip install -r requirements.txt
 python bridge/server.py
 ```
 
-Windows PowerShell 可以用 `.venv\Scripts\Activate.ps1` 激活环境。打开 [本地工作台](http://127.0.0.1:8898/)，点 **「先拿女骑士样板试试手」**。八段动作随仓库提供，可以直接播放、微调并导出。试玩、导入和导出在本地完成，生成自己的新动作需要安装并登录支持内置生图的 Codex CLI。[独立工作台与可选 DSH 面板](bridge/README.md)
+Windows PowerShell 可以用 `.venv\Scripts\Activate.ps1` 激活环境。打开 [本地工作台](http://127.0.0.1:8898/)，点 **「先拿女骑士样板试试手」**。八段动作随仓库提供，可以直接播放、微调并导出。试玩、导入和导出在本地完成；生成自己的新动作需要先在页面右上角 **「API 设置」** 里配置一个 OpenAI 兼容的生图 API Key（默认指向 `https://corecode.live/v1`，可改任意兼容网关），并选择生图模型。也支持选配一个文本模型 API Key，在生成前把中文制作稿润色成英文提示词。[独立工作台与可选 DSH 面板](bridge/README.md)
 
 ## 女骑士示例
 

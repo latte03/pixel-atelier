@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.6.0 — 自定义 API 接入
+
+- 生成通道与 Codex CLI 解耦：默认改为 OpenAI 兼容的自定义生图 API（默认网关 `https://corecode.live/v1`）。
+- 新增「API 设置」面板：生图 API Key、接口地址、模型（可拉取模型列表或手填）、输出尺寸与返回格式。
+- 新增可选文本 LLM API 配置：API Key、接口地址、模型选择，以及生成前把中文制作稿润色为英文提示词的开关（失败自动回退原文）。
+- 有参考图走 `/v1/images/edits`，无参考图走 `/v1/images/generations`；`/config`、`/config/test`、`/models/{image,llm}` 服务端接口与密钥尾四位掩码回显。
+- API Key 只存本机 `work/image-workbench/config.json`（Git 忽略）；保留 `codex` 通道作为旧版回退。
+- 新增 19 项客户端/配置/提示词润色测试，合计 60 项测试通过。
+
 ## 0.1.0 — 本地分享草案
 
 - 从一位像素巨剑女骑士的制作过程抽象工作流与返工规则。
