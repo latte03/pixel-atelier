@@ -425,6 +425,7 @@ body.atelier-shell #gifReferenceFrames button[aria-pressed=true]{border-color:va
 .role-workflow li+li::before{content:'›';display:inline-block;margin-right:12px;color:#667085}
 .role-workflow li[aria-current=step]{color:#583ac3;font-weight:700}
 .role-workflow-actions{display:flex;flex-wrap:wrap;gap:6px}
+#roleTemplateActions{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:7px}#roleTemplateActions[hidden]{display:none}.role-template-action{display:grid;gap:4px;min-width:0;padding:9px;text-align:left;border:1px solid var(--border);border-radius:8px;background:#fff}.role-template-action>span{font-size:9px;color:var(--muted)}.role-template-action strong{font-size:11px;overflow-wrap:anywhere}.role-template-action small{font-size:9px;color:var(--muted)}.role-template-action.selected{border-color:#7c5ce0;background:#f5f1ff}
 #seContinue,#seRefineIdle,#seFinalizeIdle,#seAddGenerated{margin-top:9px;white-space:normal}
 @media(max-width:1000px){.role-workflow{grid-template-columns:minmax(0,1fr) auto}.role-workflow ol{grid-row:2;grid-column:1/-1}}
 @media(max-width:520px){.role-workflow{grid-template-columns:1fr;gap:10px;padding:11px}.role-workflow ol{grid-row:2}.role-workflow li+li::before{margin-right:5px}.role-workflow ol{gap:4px 6px}.role-workflow-actions{grid-row:3}#atelierUtilities summary{padding-inline:5px}}

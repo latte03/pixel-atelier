@@ -62,6 +62,15 @@ function atProjectLabel(){
   $('atelierFollowHint').hidden=!AT.follow||!AT.reference;
   $('atelierFollowHint').textContent=AT.follow&&AT.reference?'已选参考 · '+AT.reference.name+'。选择这次要生成的动作。':'';
   $('atelierNewRole').textContent=atOwnsProject()&&!Object.keys(C.project.actions).length?'将参考图设为当前工程的母版':'从母版建立独立工程';
+  const templateDriven=!!project?.template;
+  $('roleTemplateActions').hidden=!templateDriven;
+  if(templateDriven){
+    $('roleTemplateActions').innerHTML=Object.entries(project.actions).map(([id,a],index)=>{
+      const status=a.draft?'待制作':a.recipe.count+' 帧';
+      return `<button type="button" class="role-template-action ${C.bound?.id===id?'selected':''}" data-role-action="${esc(id)}"><span>${String(index+1).padStart(2,'0')}</span><strong>${esc(a.label||actionName(id))}</strong><small>${status}</small></button>`;
+    }).join('');
+    $$('[data-role-action]').forEach(b=>b.onclick=()=>openCharacterAction(b.dataset.roleAction));
+  }else $('roleTemplateActions').innerHTML='';
 }
 function atKind(kind,reset=true){AT.kind=AT_KINDS[kind]?kind:'custom';$$('[data-atelier-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.atelierKind===AT.kind)));if(reset){$('atelierWeapon').value=AT_KINDS[AT.kind].weapon;atMotion();}atConcept();atSave();}
 const AT_MOTIONS={

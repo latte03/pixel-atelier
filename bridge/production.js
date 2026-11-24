@@ -122,7 +122,8 @@ function pfSync(){
       }
     }catch(error){/* Browser storage is optional. */}
   }
-  const home=AT.tab==='create'&&!PF.advanced;
+  const templateDriven=!!C.project?.template;
+  const home=AT.tab==='create'&&!PF.advanced&&!templateDriven;
   $('productionPanel').hidden=!home;
   document.body.classList.toggle('production-home',home);
   document.body.classList.toggle('production-editing',AT.tab==='editor'&&!!PF.editing);
