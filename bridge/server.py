@@ -5,8 +5,8 @@ from pathlib import Path
 from PIL import Image
 try:from .editor import decode_image,export_animation,gif_reference_frames
 except ImportError:from editor import decode_image,export_animation,gif_reference_frames
-try:from .projects import ProjectStore,Conflict,create_knight,create_from_master,export_character,palette_for,render_action,save_idle_gif
-except ImportError:from projects import ProjectStore,Conflict,create_knight,create_from_master,export_character,palette_for,render_action,save_idle_gif
+try:from .projects import ProjectStore,Conflict,create_knight,create_archer_template,create_from_master,export_character,palette_for,render_action,save_idle_gif
+except ImportError:from projects import ProjectStore,Conflict,create_knight,create_archer_template,create_from_master,export_character,palette_for,render_action,save_idle_gif
 try:from .rpc import BridgeError,CodexClient,inspect_sprite_png
 except ImportError:from rpc import BridgeError,CodexClient,inspect_sprite_png
 try:from .settings import Settings
@@ -261,7 +261,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host() or not self.authorized():return self.respond(403,{'error':'Unauthorized'})
         origin=self.headers.get('Origin')
         if origin and origin!='http://'+self.headers.get('Host',''):return self.respond(403,{'error':'Invalid origin'})
-        if self.path not in ['/production','/jobs','/references','/references/gif-frames','/exports','/projects','/projects/knight','/projects/master','/projects/idle-gif','/projects/save','/projects/clone','/projects/freeze','/projects/export','/config','/config/test']:return self.respond(404,{'error':'Not found'})
+        if self.path not in ['/production','/jobs','/references','/references/gif-frames','/exports','/projects','/projects/knight','/projects/archer','/projects/master','/projects/idle-gif','/projects/save','/projects/clone','/projects/freeze','/projects/export','/config','/config/test']:return self.respond(404,{'error':'Not found'})
         try:
             size=int(self.headers.get('Content-Length','0'))
             if not 0<size<=(80 if self.path.startswith('/projects') or self.path=='/production'else 17 if self.path=='/references/gif-frames'else 16)*1024*1024:raise ValueError('文件过大或请求为空')
@@ -269,6 +269,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/config':return self.respond(200,SETTINGS.update(data))
             if self.path=='/config/test':return self.respond(200,api_test(data))
             if self.path=='/production':return self.respond(200,PRODUCTION.command(data))
+            if self.path=='/projects/archer':return self.respond(201,PROJECTS.save(create_archer_template(data.get('name'))))
             if self.path=='/projects/master':return self.respond(201,PROJECTS.save(create_from_master(data)))
             if self.path=='/projects/idle-gif':return self.respond(201,save_idle_gif(PROJECTS.get(data['id']), PROJECTS, data))
             if self.path=='/projects/knight':
@@ -280,7 +281,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/projects/clone':
                 p=PROJECTS.get(data['id']);p['parent_id']=p['id'];p['name']=str(data.get('name',p['name']+' · 副本'))[:80];return self.respond(201,PROJECTS.save(p))
             if self.path=='/projects/freeze':
-                p=data['project'];p['spec']['palette']=palette_for([im for a in p['actions'].values()for im in render_action(a)],p['spec'].get('paletteLimit',64));p['spec']['frozen']=True;p['spec']['version']=p['spec'].get('version',0)+1
+                p=data['project'];frames=[im for a in p['actions'].values()if not a.get('draft')for im in render_action(a)]
+                if not frames:raise ValueError('先保存至少一个动作帧，再冻结色板')
+                p['spec']['palette']=palette_for(frames,p['spec'].get('paletteLimit',64));p['spec']['frozen']=True;p['spec']['version']=p['spec'].get('version',0)+1
                 return self.respond(200,PROJECTS.save(p,p['id'],data['expected_revision']))
             if self.path=='/projects/export':
                 p=PROJECTS.get(data['id']);eid=uuid.uuid4().hex;manifest=export_character(p,WORK/'exports'/eid);return self.respond(201,{'zip_url':'/export/'+eid+'/assets.zip','actions':len(manifest['actions'])})

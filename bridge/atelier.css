@@ -402,7 +402,7 @@ body.atelier-shell #exportMessage{color:#64748b}
 .new-role-fields input{width:100%;min-width:0;padding:9px;border:1px solid var(--border);border-radius:var(--radius)}
 #newRoleStatus{color:#9b3025;font-size:12px;line-height:1.55;margin:8px 0}
 #newRoleStatus:empty{display:none}
-.new-role-actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:16px}
+.new-role-template{display:grid;gap:7px;margin:14px 0;padding:11px;border:1px solid var(--border);border-radius:var(--radius);background:#ffffff05}.new-role-template small{color:var(--muted);font-size:10px;line-height:1.6}.new-role-actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:16px}
 
 
 #gifReferenceDialog{width:min(640px,calc(100vw - 30px));max-height:calc(100dvh - 32px);padding:20px}

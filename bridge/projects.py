@@ -5,6 +5,7 @@ from PIL import Image
 try:from .editor import decode_image,export_animation,validate_events,open_gif
 except ImportError:from editor import decode_image,export_animation,validate_events,open_gif
 GUARD=threading.RLock()
+ARCHER_TEMPLATE=Path(__file__).resolve().parents[1]/'templates'/'seven-direction-archer.json'
 class Conflict(ValueError):pass
 
 def image_data(im):
@@ -37,6 +38,14 @@ def validate(p):
     for aid,a in actions.items():
         if not re.fullmatch('[a-z][a-z0-9_-]{0,29}',aid):raise ValueError('动作ID无效')
         if not isinstance(a,dict)or not isinstance(a.get('source'),str):raise ValueError('动作缺少源图')
+        label=a.get('label',aid)
+        if not isinstance(label,str)or not 1<=len(label.strip())<=80:raise ValueError('动作名称须为1至80字')
+        draft=a.get('draft',False)
+        if type(draft)is not bool:raise ValueError('动作草稿标记无效')
+        if draft:
+            if a['source'] or a.get('recipe') or a.get('overrides'):raise ValueError('草稿动作不能包含帧数据')
+            if not isinstance(a.get('prompt',''),str)or len(a.get('prompt',''))>6000:raise ValueError('动作提示词无效')
+            continue
         r=a.get('recipe',{});c=r.get('cols');rows=r.get('rows');count=r.get('count');fs=r.get('frameSize')
         if any(type(v)is not int for v in [c,rows,count,fs])or not 1<=c<=8 or not 1<=rows<=8 or not 1<=count<=min(64,c*rows)or fs not in [128,160,192,224,256,320]:raise ValueError('动作排版无效')
         if type(r.get('scale'))not in [int,float]or not math.isfinite(r['scale'])or not 0<r['scale']<=8:raise ValueError('动作缩放无效')
@@ -59,6 +68,7 @@ def validate(p):
     return p
 
 def render_action(a):
+    if a.get('draft'):raise ValueError('动作尚未保存帧')
     im=decode_image(a['source']);r=a['recipe'];fs=r['frameSize'];out=[]
     for i in range(r['count']):
         override=a.get('overrides',{}).get(str(i))
@@ -175,6 +185,13 @@ def save_idle_gif(project, store, data):
     return {'project': saved, 'action': action_id, 'reference_index': reference_index}
 
 
+def create_archer_template(name=None):
+    p=json.loads(ARCHER_TEMPLATE.read_text())
+    validate(p)
+    if name is not None and str(name).strip():p['name']=str(name).strip()[:80]
+    return p
+
+
 def create_from_master(data):
     """Prepare a complete initial project before committing it to the store."""
     name = data.get('name')
@@ -273,9 +290,10 @@ def create_knight(example_dir):
 def export_character(p,folder):
     validate(p);spec=p['spec']
     if not spec.get('frozen'):raise ValueError('请先冻结角色规格与色板')
-    if not p['actions']:raise ValueError('工程没有可导出的动作')
+    actions={aid:a for aid,a in p['actions'].items()if not a.get('draft')}
+    if not actions:raise ValueError('工程没有可导出的动作')
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=False);manifest={'name':p['name'],'spec':spec,'review':'pending','actions':{}}
-    for aid,a in p['actions'].items():
+    for aid,a in actions.items():
         r=a['recipe']
         if r['frameSize']!=spec['frameSize']or r['pivot']!=spec['pivot']:raise ValueError(aid+'的画布或锚点与冻结规格不一致，请先校准')
         frames=render_action(a)

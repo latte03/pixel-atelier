@@ -78,14 +78,17 @@ function atMotion(){
   if(AT.follow){
     delete labels.idle;
     Object.assign(labels,{dash:'闪身',heavy:'蓄力攻击',jump:'跳跃',knockdown:'倒地'});
+    if(atOwnsProject())for(const [id,a]of Object.entries(C.project.actions))if(!isPresetAction(id)&&!roleIsIdle(id))labels[id]=a.label||actionName(id);
   }
   if(atOwnsProject()&&!C.project.masterBasis&&!AT.follow){for(const id of Object.keys(labels))if(id!=='idle')delete labels[id];}
   if(!labels[AT.action])AT.action=AT.follow?'run':'idle';
-  const fallback=AT.action==='attack'?AT_KINDS[AT.kind].attack:AT_MOTIONS[AT.action];
-  $('atelierMotion').value=AT.follow&&['bow','staff'].includes(AT.kind)&&C.project?.spec.profile===AT.kind
+  const custom=C.project?.actions[AT.action];
+  const presetFallback=AT.action==='attack'?AT_KINDS[AT.kind].attack:AT_MOTIONS[AT.action];
+  const fallback=custom?.draft?custom.prompt:custom&&!isPresetAction(AT.action)?custom.prompt||'请描述这个自定义动作的预备、发力、主要姿势、释放或收势。':presetFallback;
+  $('atelierMotion').value=AT.follow&&!custom?.draft&&isPresetAction(AT.action)&&['bow','staff'].includes(AT.kind)&&C.project?.spec.profile===AT.kind
     ?roleActionPrompt(AT.action==='attack'?'light':AT.action,fallback):fallback;
   $('atelierActions').innerHTML=Object.entries(labels).map(([id,label])=>
-    '<button data-at-action="'+id+'" aria-pressed="'+(id===AT.action)+'">'+label+'</button>'
+    '<button data-at-action="'+id+'" aria-pressed="'+(id===AT.action)+'">'+esc(label)+'</button>'
   ).join('');
   $$('[data-at-action]').forEach(b=>b.onclick=()=>{
     AT.action=b.dataset.atAction;
@@ -96,7 +99,7 @@ function atMotion(){
     atSave();
   });
 }
-function atBuild(){const n=number('atelierFrames'),style={chibi:'二至三头身Q版像素，清晰硬边、深色轮廓、小块分级明暗，避免平滑插画。',classic:'约三头身经典RPG像素，清晰轮廓、有限色阶，避免写实和模糊。',custom:'按下方自定义规则绘制像素角色。'}[$('atelierStyle').value];return `【角色与目标】\n${$('atelierSeed').value.trim()||AT_KINDS[AT.kind].label}\n人物特征：${$('atelierIdentity').value.trim()||(AT.reference?'严格沿用参考图的脸部、发型、服装与识别点。':'按上面的文字设计一个可辨认的原创角色。')}\n\n【美术规则】\n${style}\n${$('atelierStyleNote').value.trim()}\n目标原生画布 ${number('atelierSize')}×${number('atelierSize')}，配色目标 ${number('atelierColors')} 色；后续切帧统一采样，禁止逐帧独立缩放。全身三分之四侧视，面向右侧。\n\n【装备与必须保留项】\n${$('atelierWeapon').value.trim()}\n${$('atelierKeep').value.trim()}\n\n【动作过程】\n${$('atelierMotion').value.trim()}\n完整人物逐帧，肩肘腕髋膝踝活动合理；不拆部件、不加多余肢体。\n\n【输出要求】\n${$('atelierOutput').value==='pose'?'一张完整角色就绪姿势，居中保留装备与四周余量。':`规则4列×${n/4}行动作图表，共${n}个连续关键姿势，按从左到右、从上到下排列，每格等尺寸，保持同一人物尺度与逻辑根节点，完整容纳人物、装备与特效。`}\n真实透明Alpha背景，不画底板、地面、投影、棋盘格、文字或网格线。清晰像素硬边，不抗锯齿、不模糊。角色运动位移交给游戏代码，姿势本身保留必要重心变化。` .trim();}
+function atBuild(){const n=number('atelierFrames'),style={chibi:'二至三头身Q版像素，清晰硬边、深色轮廓、小块分级明暗，避免平滑插画。',classic:'约三头身经典RPG像素，清晰轮廓、有限色阶，避免写实和模糊。',custom:'按下方自定义规则绘制像素角色。'}[$('atelierStyle').value];return `【角色与目标】\n${$('atelierSeed').value.trim()||AT_KINDS[AT.kind].label}\n人物特征：${$('atelierIdentity').value.trim()||(AT.reference?'严格沿用参考图的脸部、发型、服装与识别点。':'按上面的文字设计一个可辨认的原创角色。')}\n\n【美术规则】\n${style}\n${$('atelierStyleNote').value.trim()}\n目标原生画布 ${number('atelierSize')}×${number('atelierSize')}，配色目标 ${number('atelierColors')} 色；后续切帧统一采样，禁止逐帧独立缩放。${isPresetAction(AT.action)?'全身三分之四侧视，面向右侧。':'视角与人物朝向以动作描述为准。'}\n\n【装备与必须保留项】\n${$('atelierWeapon').value.trim()}\n${$('atelierKeep').value.trim()}\n\n【动作过程】\n${$('atelierMotion').value.trim()}\n完整人物逐帧，肩肘腕髋膝踝活动合理；不拆部件、不加多余肢体。\n\n【输出要求】\n${$('atelierOutput').value==='pose'?'一张完整角色就绪姿势，居中保留装备与四周余量。':`规则4列×${n/4}行动作图表，共${n}个连续关键姿势，按从左到右、从上到下排列，每格等尺寸，保持同一人物尺度与逻辑根节点，完整容纳人物、装备与特效。`}\n真实透明Alpha背景，不画底板、地面、投影、棋盘格、文字或网格线。清晰像素硬边，不抗锯齿、不模糊。角色运动位移交给游戏代码，姿势本身保留必要重心变化。` .trim();}
 function atStep(step){
   const first=AT.follow?3:0;
   AT.step=Math.max(first,Math.min(5,step));
@@ -181,7 +184,7 @@ function atApplyDraft(d,project=null){
   const draft=d?.version===1?d:null;
   const freshKind=project?(project.spec.profile||'custom'):'greatsword';
   Object.assign(AT,{
-    step:draft?.step||0,action:draft?.action==='attack'||Object.hasOwn(AT_MOTIONS,draft?.action)?draft.action:'idle',
+    step:draft?.step||0,action:draft?.action&&(draft.action==='attack'||Object.hasOwn(AT_MOTIONS,draft.action)||window.characterProject?.hasAction(draft.action))?draft.action:'idle',
     follow:!!draft?.follow&&!!project?.masterBasis,
     reference:draft?.reference||null,job:draft?.job||null,started:!!draft?.started,edited:!!draft?.edited,
     projectId:project?.id||null,lastStatus:'',error:'',submitting:false,epoch:(AT.epoch||0)+1,
@@ -194,6 +197,10 @@ function atApplyDraft(d,project=null){
   $('atelierReferenceFile').value='';
   const motion=$('atelierMotion').value;
   atKind(draft?.kind||freshKind,!draft);
+  if(project&&!draft){
+    $('atelierIdentity').value=project.spec.identity||'';
+    $('atelierWeapon').value=project.spec.weapon||'';
+  }
   if(draft){
     atMotion();
     $('atelierMotion').value=motion;
@@ -226,7 +233,7 @@ async function atRestore(){
     else if(requested)atTab(design?.tab||'editor');
     else atTab(design?.tab||'create');
     if(requested&&AT.tab==='editor'&&project&&!C.bound&&!S.source&&Object.keys(project.actions).length){
-      await openCharacterAction(atIdleAction()||Object.keys(project.actions)[0]);
+      await openCharacterAction(atIdleAction()||Object.entries(project.actions).find(([,a])=>!a.draft)?.[0]);
     }
   }catch(e){
     $('atelierDraftStatus').textContent='草稿未恢复，可重新开始或导入项目。';
@@ -259,14 +266,14 @@ async function atActivateProject(project,design){
     await useCharacter(project);
     atResetWorkspace(project);
     const blank=!Object.keys(project.actions).length;
-    atApplyDraft(design,blank||design?project:null);
+    atApplyDraft(design,project);
     atTab('create');
   }finally{
     C.suspend=false;
     AT.hydrating=hydrating;
   }
   if($('characterDialog').open)$('characterDialog').close();
-  const first=atIdleAction()||Object.keys(project.actions)[0];
+  const first=atIdleAction()||Object.entries(project.actions).find(([,a])=>!a.draft)?.[0];
   if(first&&!window.productionFlow)await openCharacterAction(first);
   await flushWorkspace(false);
   await atWriteDraft();
@@ -373,7 +380,7 @@ function bindNewRole(){
   function update(){
     submit.disabled=busy||!name.value.trim();
     submit.textContent=busy?'正在创建…':'创建空白工程';
-    for(const control of [name,$('newRoleCancel'),$('newRoleClose')])control.disabled=busy;
+    for(const control of [name,$('newRoleCancel'),$('newRoleClose'),$('newRoleArcher')])control.disabled=busy;
   }
   function open(){
     form.reset();
@@ -386,9 +393,8 @@ function bindNewRole(){
   $('newRoleClose').onclick=$('newRoleCancel').onclick=()=>dialog.close();
   dialog.oncancel=e=>{if(busy)e.preventDefault();};
   name.addEventListener('input',update);
-  form.onsubmit=async e=>{
-    e.preventDefault();
-    if(submit.disabled||C.restoring||AT.hydrating||AT.switching||AT.creating)return;
+  async function createProject(endpoint,payload,message){
+    if(busy||C.restoring||AT.hydrating||AT.switching||AT.creating)return;
     busy=true;
     status.textContent='';
     update();
@@ -396,12 +402,12 @@ function bindNewRole(){
     try{
       await flushWorkspace();
       await atWriteDraft();
-      saved=await api('/projects',atNewProjectPayload(name.value.trim()));
+      saved=await api(endpoint,payload);
       atClearProjectLink();
       await atActivateProject(saved,null);
       dialog.close();
       $('productionGenerate').focus();
-      toast('已创建空白角色工程');
+      toast(message);
     }catch(e){
       if(saved){
         dialog.close();
@@ -412,7 +418,12 @@ function bindNewRole(){
       busy=false;
       update();
     }
+  }
+  form.onsubmit=e=>{
+    e.preventDefault();
+    if(!submit.disabled)createProject('/projects',atNewProjectPayload(name.value.trim()),'已创建空白角色工程');
   };
+  $('newRoleArcher').onclick=()=>createProject('/projects/archer',{name:name.value.trim()},'已创建七方向弓箭手模板');
 }
 function roleIsIdle(id){
   return /^idle(?:_v[0-9]+)?$/.test(id||'');
@@ -420,7 +431,7 @@ function roleIsIdle(id){
 function atIdleAction(){
   const project=C.project;
   if(!project)return null;
-  return project.masterBasis?.action||Object.keys(project.actions).filter(roleIsIdle).at(-1)||null;
+  return project.masterBasis?.action||Object.keys(project.actions).filter(id=>roleIsIdle(id)&&!project.actions[id].draft).at(-1)||null;
 }
 function atMakeIdle(reference=null){
   const project=C.project;
@@ -440,7 +451,7 @@ function atMakeIdle(reference=null){
   $('atelierDesign').scrollIntoView({block:'start'});
 }
 
-async function atStartFollow(){
+async function atStartFollow(action='run'){
   const project=C.project;
   if(!project?.masterBasis||!project.master){
     toast('先打开待机，在时间轴选一帧并定稿');
@@ -451,7 +462,7 @@ async function atStartFollow(){
     atKind(project.spec.profile||(mageProfile()?'staff':project.template_origin?'greatsword':'custom'));
   }
   const reference={url:project.master,name:project.name+' · 定稿待机母版'};
-  Object.assign(AT,{reference,follow:true,action:'run',job:null,edited:false,error:'',lastStatus:''});
+  Object.assign(AT,{reference,follow:true,action,job:null,edited:false,error:'',lastStatus:''});
   $('atelierOutput').value='sheet';
   $('atelierSize').value=project.spec.frameSize;
   $('atelierColors').value=project.spec.paletteLimit||64;
@@ -499,7 +510,7 @@ async function atOpenResult(){
   const title=window.characterProject?.actionLabel(job.action)||actionName(job.action);
   await openLayout(job.image_url,'新动作 · '+title,job);
   if(S.job?.id!==job.id)return;
-  selectPreset(presets.some(p=>p[0]===job.action)?job.action:'idle');
+  selectPreset(job.action||'idle');
   $('prompt').value=job.prompt||$('prompt').value;
   updatePrompt();
   S.pendingAtelierSize=number('atelierSize');

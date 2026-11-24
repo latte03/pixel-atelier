@@ -1,7 +1,7 @@
 import base64,copy,io,json,tempfile,unittest,zipfile
 from pathlib import Path
 from PIL import Image,ImageDraw
-from bridge.projects import ProjectStore,Conflict,render_action,export_character,image_data,create_from_master,save_idle_gif,create_knight
+from bridge.projects import ProjectStore,Conflict,render_action,export_character,image_data,create_from_master,save_idle_gif,create_knight,create_archer_template
 
 def project():
  im=Image.new('RGBA',(128,128));ImageDraw.Draw(im).rectangle([50,50,65,100],fill='#a65dcb')
@@ -101,4 +101,40 @@ class ProjectTests(unittest.TestCase):
   with tempfile.TemporaryDirectory()as t:
    p=project();p['actions']['light']['recipe']['pivot']=[60,112]
    with self.assertRaisesRegex(ValueError,'锚点'):export_character(p,Path(t)/'out')
+ def test_seven_direction_archer_template(self):
+  p=create_archer_template('巡林弓手')
+  self.assertEqual(p['name'],'巡林弓手')
+  self.assertEqual(list(p['actions']),['idle','walk','shoot_right','shoot_left','shoot_up_left','shoot_up_right','shoot_up','shoot_down_left','shoot_down_right'])
+  self.assertTrue(all(a['draft']for a in p['actions'].values()))
+  self.assertIn('无箭袋',p['spec']['weapon'])
+  self.assertEqual(p['template']['directions'],['right','left','up_left','up_right','up','down_left','down_right'])
+  self.assertEqual(p['template']['quick_release_frames_zero_based'],[0,1,2,3,6,7])
+  self.assertEqual(p['template']['charged_hold_loop_frames_zero_based'],[3,4,5])
+  for aid,a in p['actions'].items():
+   self.assertIn('不画箭袋' if aid=='idle' else '无箭袋',a['prompt'])
+   if aid.startswith('shoot_'):self.assertIn('04→05↔06',a['prompt'])
+  self.assertIn('8帧原地行走循环',p['actions']['walk']['prompt'])
+  with tempfile.TemporaryDirectory()as t:
+   saved=ProjectStore(t).save(p)
+   self.assertEqual(saved['template_origin'],'seven-direction-archer-v1')
+   self.assertEqual(len(saved['actions']),9)
+ def test_custom_draft_actions_preserve_order(self):
+  with tempfile.TemporaryDirectory()as t:
+   p=project();idle=p['actions']['idle'];light=p['actions']['light']
+   p['actions']={'idle':idle,'shoot_right':{'label':'射击 · 右','source':'','prompt':'满弓后松弦','draft':True},'light':light}
+   saved=ProjectStore(t).save(p)
+   self.assertEqual(list(saved['actions']),['idle','shoot_right','light'])
+   self.assertEqual(ProjectStore(t).get(saved['id'])['actions']['shoot_right']['label'],'射击 · 右')
+   with self.assertRaisesRegex(ValueError,'尚未保存帧'):render_action(saved['actions']['shoot_right'])
+ def test_draft_action_rejects_frame_data(self):
+  p=project();p['actions']['shoot_right']={'label':'射击','source':'','prompt':'','draft':True,'recipe':p['actions']['idle']['recipe']}
+  with tempfile.TemporaryDirectory()as t,self.assertRaisesRegex(ValueError,'草稿动作'):
+   ProjectStore(t).save(p)
+ def test_export_skips_draft_actions(self):
+  with tempfile.TemporaryDirectory()as t:
+   p=project();p['actions']['shoot_right']={'label':'射击 · 右','source':'','prompt':'','draft':True}
+   out=Path(t)/'export';manifest=export_character(p,out)
+   self.assertEqual(list(manifest['actions']),['idle','light'])
+   self.assertFalse((out/'shoot_right').exists())
+   with zipfile.ZipFile(out/'assets.zip')as z:self.assertIn('shoot_right',json.loads(z.read('project.json'))['actions'])
 if __name__=='__main__':unittest.main()

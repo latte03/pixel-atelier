@@ -11,21 +11,112 @@ function autoSave(){if(C.restoring||C.suspend)return;clearTimeout(C.timer);$('au
 function flushWorkspace(syncServer=true){if(C.restoring||C.suspend||!C.db)return Promise.resolve();clearTimeout(C.timer);const draft=structuredClone(workspace());return draftWrite(draft).then(()=>{ $('autoStatus').textContent='草稿已存本机';$('dirty').textContent='草稿已保存';if(syncServer&&C.project&&!C.conflict){const local=structuredClone(C.project);C.chain=C.chain.catch(()=>{}).then(async()=>{if(C.project?.id!==local.id||C.conflict||fingerprint(local)===C.savedFingerprint)return;try{const saved=await api('/projects/save',{project:local,expected_revision:C.project.revision});if(C.project?.id===saved.id){C.project.revision=saved.revision;C.project.updated_at=saved.updated_at;C.savedFingerprint=fingerprint(local);await draftWrite(structuredClone(workspace()));$('autoStatus').textContent='工程已自动保存';$('dirty').textContent='工程已保存';}}catch(e){C.conflict=true;$('autoStatus').textContent='本机草稿已保存 · 服务保存失败';$('characterMessage').textContent=e.message;toast(e.message);}});return C.chain;}}).catch(e=>{ $('autoStatus').textContent='保存失败，请下载项目备份';toast('本机草稿保存失败：'+e.message);});}
 async function beforeSource(){if(C.suspend||C.restoring)return;await flushWorkspace();C.bound=null;}
 async function listCharacters(){try{const list=await api('/projects');$('characterList').innerHTML=list.map(p=>`<button data-project="${p.id}" class="character-row"><span><strong>${esc(p.name)}</strong><small>${p.actions} 个动作 · 修订 ${p.revision}${p.parent_id?' · 模板副本':''}</small></span><span>打开 ↗</span></button>`).join('')||'<p class="microcopy">还没有工程。先复制示例模板，或把当前动作保存为新角色。</p>';$$('[data-project]').forEach(b=>b.onclick=()=>atOpenProject(b.dataset.project));}catch(e){$('characterMessage').textContent=e.message;}}
-function renderCharacter(){const p=C.project;$$('[data-preset]').forEach(b=>{if(b.lastChild?.nodeType===3)b.lastChild.textContent=window.characterProject?.actionLabel(b.dataset.preset)||actionName(b.dataset.preset);});$$('[data-guide-move]').forEach(b=>b.textContent=window.characterProject?.actionLabel(b.dataset.guideMove)||actionName(b.dataset.guideMove));$('characterTitle').textContent=p?.name||'角色工程';$('characterActive').hidden=!p;$('characterEmpty').hidden=!!p;if(!p)return;$('characterName').value=p.name;$('specIdentity').value=p.spec.identity||'';$('specWeapon').value=p.spec.weapon||'';$('characterSpec').textContent=`${p.spec.frameSize}² · 锚点 ${p.spec.pivot.join(', ')} · ${p.spec.palette.length} 色 · ${p.spec.frozen?'已冻结':'待冻结'}`;$('characterMoves').innerHTML=Object.entries(p.actions).map(([id,a])=>`<button data-character-action="${esc(id)}" class="character-action ${C.bound?.id===id?'selected':''}"><strong>${esc(a.label||actionName(id))}</strong><small>${a.recipe.count} 帧 · ${a.recipe.durations.reduce((v,n)=>v+n,0)}ms · 待复核</small><span>编辑 ↗</span></button>`).join('');$$('[data-character-action]').forEach(b=>b.onclick=()=>openCharacterAction(b.dataset.characterAction));$('characterRevision').textContent='修订 '+p.revision;}
+function isPresetAction(id){return presets.some(p=>p[0]===id.replace(/_v[0-9]+$/,''));}
+function projectActionLabel(id){return C.project?.actions[id]?.label||null;}
+function actionIdBase(value){
+  const base=String(value||'').toLowerCase().replace(/[^a-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,24);
+  return /^[a-z]/.test(base)?base:'action';
+}
+function uniqueActionId(label,preferred=''){
+  const actions=C.project?.actions||{};
+  let base=actionIdBase(preferred||label);
+  if(!preferred&&isPresetAction(base))base='custom_'+base;
+  let id=base,revision=2;
+  while(actions[id])id=base+'_'+revision++;
+  return id;
+}
+function draftAction(label){return{label,source:'',prompt:'',review:'pending',draft:true};}
+function insertActionAfter(actions,afterId,id,action){
+  const result={};
+  for(const [key,value]of Object.entries(actions)){
+    result[key]=value;
+    if(key===afterId)result[id]=action;
+  }
+  if(!Object.hasOwn(result,id))result[id]=action;
+  return result;
+}
+function renderActionOptions(selected){
+  const actions=C.project?.actions||{},entries=Object.entries(actions);
+  for(const [id]of presets)if(!Object.hasOwn(actions,id))entries.push([id,{label:actionName(id)}]);
+  const next=entries.some(([id])=>id===selected)?selected:entries[0]?.[0]||'';
+  $('actionSlot').innerHTML=entries.map(([id,a])=>`<option value="${esc(id)}">${esc(a.label||actionName(id))}${a.draft?' · 待制作':''}</option>`).join('');
+  $('actionSlot').value=next;
+}
+function renderCharacter(){const p=C.project;$$('[data-preset]').forEach(b=>{if(b.lastChild?.nodeType===3)b.lastChild.textContent=window.characterProject?.actionLabel(b.dataset.preset)||actionName(b.dataset.preset);});$$('[data-guide-move]').forEach(b=>b.textContent=window.characterProject?.actionLabel(b.dataset.guideMove)||actionName(b.dataset.guideMove));$('characterTitle').textContent=p?.name||'角色工程';$('characterActive').hidden=!p;$('characterEmpty').hidden=!!p;if(!p)return;$('characterName').value=p.name;$('specIdentity').value=p.spec.identity||'';$('specWeapon').value=p.spec.weapon||'';$('characterSpec').textContent=`${p.spec.frameSize}² · 锚点 ${p.spec.pivot.join(', ')} · ${p.spec.palette.length} 色 · ${p.spec.frozen?'已冻结':'待冻结'}`;const entries=Object.entries(p.actions);if(C.pendingDelete&&!p.actions[C.pendingDelete])C.pendingDelete=null;
+  $('characterMoves').innerHTML=entries.map(([id,a],index)=>{
+    const deleting=C.pendingDelete===id;
+    const meta=a.draft?'待制作':`${a.recipe.count} 帧 · ${a.recipe.durations.reduce((v,n)=>v+n,0)}ms · 待复核`;
+    return `<div class="character-action ${C.bound?.id===id?'selected':''} ${a.draft?'draft':''}"><button type="button" class="character-action-main" data-character-action="${esc(id)}"><strong>${esc(a.label||actionName(id))}</strong><small>${meta}</small><span>${a.draft?'制作 ↗':'编辑 ↗'}</span></button><div class="character-action-tools"><button type="button" data-action-up="${esc(id)}" ${index===0?'disabled':''}>上移</button><button type="button" data-action-down="${esc(id)}" ${index===entries.length-1?'disabled':''}>下移</button><button type="button" data-action-copy="${esc(id)}">复制</button><button type="button" data-action-delete="${esc(id)}" class="${deleting?'confirm-delete':''}">${deleting?'确认删除':'删除'}</button></div></div>`;
+  }).join('')||'<p class="microcopy">还没有动作。新增自定义动作，或从当前时间轴保存第一个动作。</p>';
+  $$('[data-character-action]').forEach(b=>b.onclick=()=>{C.pendingDelete=null;openCharacterAction(b.dataset.characterAction);});
+  $$('[data-action-up]').forEach(b=>b.onclick=()=>moveAction(b.dataset.actionUp,-1));
+  $$('[data-action-down]').forEach(b=>b.onclick=()=>moveAction(b.dataset.actionDown,1));
+  $$('[data-action-copy]').forEach(b=>b.onclick=()=>{C.pendingDelete=null;copyAction(b.dataset.actionCopy);});
+  $$('[data-action-delete]').forEach(b=>b.onclick=()=>deleteAction(b.dataset.actionDelete));
+  renderActionOptions(C.bound?.id||$('actionSlot').value);
+  $('characterRevision').textContent='修订 '+p.revision;}
 async function useCharacter(p){C.project=p;C.savedFingerprint=fingerprint(p);C.conflict=false;C.bound=null;renderCharacter();await listCharacters();}
-async function openCharacterAction(id){await flushWorkspace();const p=C.project,a=p?.actions[id];if(!a)return;C.suspend=true;try{await source(a.source,a.label||id);const preset=id.replace(/_v[0-9]+$/,'');selectPreset(presets.some(x=>x[0]===preset)?preset:'idle');$('prompt').value=a.prompt||$('prompt').value;S.easy=true;slice(a.recipe);for(const [i,value]of Object.entries(a.overrides||{})){S.frames[Number(i)].override=value;S.frames[Number(i)].overrideImage=await loadImage(value);}C.bound={id,epoch:S.sourceEpoch};$('projectName').value=p.name;if(p.master)setReference({url:p.master,name:p.name+' · 冻结母版'});renderTimeline();draw();renderCharacter();$('characterDialog').close();$('quickHelp').textContent='正在编辑角色工程中的动作；位置与时长修改会自动保存。';}finally{C.suspend=false;autoSave();if(window.atelierStudio&&AT.tab==='delivery')atRenderDelivery();}}
+async function openCharacterAction(id){await flushWorkspace();const p=C.project,a=p?.actions[id];if(!a)return;if(a.draft){$('characterDialog').close();if(roleIsIdle(id)){atMakeIdle();return;}if(!p.masterBasis||!p.master){toast('先定稿待机母版，再制作自定义动作');return;}await atStartFollow(id);return;}C.suspend=true;try{await source(a.source,a.label||id);selectPreset(id);$('prompt').value=a.prompt||$('prompt').value;S.easy=true;slice(a.recipe);for(const [i,value]of Object.entries(a.overrides||{})){S.frames[Number(i)].override=value;S.frames[Number(i)].overrideImage=await loadImage(value);}C.bound={id,epoch:S.sourceEpoch};$('projectName').value=p.name;if(p.master)setReference({url:p.master,name:p.name+' · 冻结母版'});renderTimeline();draw();renderCharacter();$('characterDialog').close();$('quickHelp').textContent='正在编辑角色工程中的动作；位置与时长修改会自动保存。';}finally{C.suspend=false;autoSave();if(window.atelierStudio&&AT.tab==='delivery')atRenderDelivery();}}
 async function copyTemplate(){const b=$('copyKnight');b.disabled=true;await flushWorkspace();try{await useCharacter(await api('/projects/knight',{}));$('characterMessage').textContent='已建立独立女骑士工程，原示例不受修改影响。';await openCharacterAction('light');}catch(e){toast(e.message);}finally{b.disabled=false;}}
 function currentAction(label){return{label:label||actionName(S.action),source:S.sourceData,prompt:$('prompt').value,recipe:recipe(),overrides:frameOverrides(),review:'pending'};}
+async function mutateActions(mutator,message){
+  if(!C.project)return false;
+  await flushWorkspace();
+  if(C.conflict){toast('工程保存冲突，请先下载备份并重新打开');return false;}
+  if(mutator()===false)return false;
+  C.pendingDelete=null;
+  renderCharacter();
+  await flushWorkspace();
+  if(C.conflict)return false;
+  toast(message);
+  return true;
+}
+async function addCustomAction(label){
+  label=label.trim();
+  if(!label)return false;
+  if(label.length>80){toast('动作名称不能超过80字');return false;}
+  if(Object.keys(C.project?.actions||{}).length>=16){toast('一个角色工程最多保存16个动作');return false;}
+  const id=uniqueActionId(label);
+  return mutateActions(()=>{C.project.actions[id]=draftAction(label);},'已新增自定义动作');
+}
+async function copyAction(id){
+  const source=C.project?.actions[id];
+  if(!source)return false;
+  if(Object.keys(C.project.actions).length>=16){toast('一个角色工程最多保存16个动作');return false;}
+  const copyId=uniqueActionId(source.label||id,id);
+  const label=((source.label||actionName(id))+' · 副本').slice(0,80);
+  return mutateActions(()=>{C.project.actions=insertActionAfter(C.project.actions,id,copyId,{...structuredClone(source),label});},'已复制动作');
+}
+async function moveAction(id,delta){
+  const entries=Object.entries(C.project?.actions||{}),index=entries.findIndex(([key])=>key===id),target=index+delta;
+  if(index<0||target<0||target>=entries.length)return false;
+  return mutateActions(()=>{[entries[index],entries[target]]=[entries[target],entries[index]];C.project.actions=Object.fromEntries(entries);},'动作顺序已更新');
+}
+async function deleteAction(id){
+  if(!C.project?.actions[id])return false;
+  if(C.pendingDelete!==id){C.pendingDelete=id;renderCharacter();return false;}
+  if(C.project.masterBasis?.action===id){C.pendingDelete=null;renderCharacter();toast('待机母版来源动作不能删除，请先更换母版');return false;}
+  return mutateActions(()=>{
+    delete C.project.actions[id];
+    if(C.bound?.id===id){
+      C.bound=null;
+      clearWorkingMedia(C.project);
+      if(C.project.master)setReference({url:C.project.master,name:C.project.name+' · 冻结母版'});
+    }
+  },'动作已删除');
+}
 async function createCharacter(){if(!S.frames.length)return toast('先导入或生成一个动作，再建立工程');await flushWorkspace();const p={format:'pixel-atelier-character/1',name:($('projectName').value||'我的角色').slice(0,80),master:await dataURL(S.reference?.url||S.sourceData),spec:{frameSize:S.size,pivot:[number('pivotX'),number('pivotY')],palette:[],frozen:false,version:0,identity:'保持参考人物的头身比例、发型、服装与配色',weapon:'保持参考图的装备尺寸、握持点与结构',style:'完整人物像素逐帧，硬边有限色板，透明背景'},actions:{[S.action]:currentAction()}};try{await useCharacter(await api('/projects',p));C.bound={id:S.action,epoch:S.sourceEpoch};await freezeCharacter();renderCharacter();toast('角色工程已建立');}catch(e){toast(e.message);}}
 async function addAction(id=$('actionSlot').value,label=actionName(id)){
   if(!C.project)return createCharacter();
   if(!S.frames.length){toast('先生成或导入动作并建立时间轴');return false;}
-  if(C.project.actions[id]&&C.bound?.id!==id){
+  const existing=C.project.actions[id];
+  if(!existing&&Object.keys(C.project.actions).length>=16){toast('一个角色工程最多保存16个动作');return false;}
+  if(existing&&!existing.draft&&C.bound?.id!==id){
     toast('该动作槽已有内容。请先复制工程，再修改现有动作，避免误覆盖。');
     return false;
   }
   captureBound();
-  C.project.actions[id]=currentAction(label);
+  C.project.actions[id]=currentAction(label||existing?.label||actionName(id));
   C.bound={id,epoch:S.sourceEpoch};
   await flushWorkspace();
   renderCharacter();
@@ -48,10 +139,10 @@ async function restoreWorkspace(){try{C.db=await dbOpen();const d=await draftRea
   }
  }
  C.savedFingerprint=fingerprint(server);}catch(e){if(e.message&&e.message.includes('不存在')){C.project=null;C.conflict=false;}else C.conflict=true;}}
- if(d.source){await source(d.source,d.label||'恢复的动作',d.job||null);selectPreset(presets.some(p=>p[0]===d.action)?d.action:'idle');S.easy=d.easy;if(d.recipe)slice(d.recipe);for(const [i,value]of Object.entries(d.overrides||{})){if(S.frames[i]){S.frames[i].override=value;S.frames[i].overrideImage=await loadImage(value);}}S.index=Math.min(d.index||0,Math.max(0,S.frames.length-1));syncFrame();renderTimeline();draw();}
+ if(d.source){await source(d.source,d.label||'恢复的动作',d.job||null);selectPreset(window.characterProject?.hasAction(d.action)?d.action:presets.some(p=>p[0]===d.action)?d.action:'idle');S.easy=d.easy;if(d.recipe)slice(d.recipe);for(const [i,value]of Object.entries(d.overrides||{})){if(S.frames[i]){S.frames[i].override=value;S.frames[i].overrideImage=await loadImage(value);}}S.index=Math.min(d.index||0,Math.max(0,S.frames.length-1));syncFrame();renderTimeline();draw();}
  if(d.reference)setReference(d.reference);if(C.project)$('projectName').value=C.project.name;$('prompt').value=d.prompt||$('prompt').value;if(d.guide){Object.assign(G,{step:d.guide.step,choice:d.guide.choice,action:d.guide.action,pending:d.guide.pending});$('guideNote').value=d.guide.note||'';$('guideDetail').value=d.guide.detail||'16';}if(d.bound&&C.project?.actions[d.bound])C.bound={id:d.bound,epoch:S.sourceEpoch};view(['start','create','animate','library','tasks'].includes(d.view)?d.view:'start');renderCharacter();$('autoStatus').textContent=C.conflict?'已恢复本机草稿 · 请检查修订':'已恢复上次工作';toast('已恢复上次角色与时间轴');}}catch(e){$('autoStatus').textContent='草稿恢复失败，请导入备份';toast(e.message);}finally{C.suspend=false;C.restoring=false;if($('autoStatus').textContent==='准备恢复草稿')$('autoStatus').textContent='本机草稿已就绪';if(window.atelierStudio&&AT.tab==='delivery')atRenderDelivery();}}
 async function replaceFrame(f){if(!f||!S.frames.length)return;try{const value=await readFile(f),im=await loadImage(value);if(f.type!=='image/png'||im.width!==S.size||im.height!==S.size)throw Error(`请提供 ${S.size}×${S.size} 的透明PNG完整姿势，不自动拉伸武器`);const b=bounds(im,{x:0,y:0,w:im.width,h:im.height});if(!b)throw Error('替换图片没有可见主体');const cv=document.createElement('canvas');cv.width=cv.height=S.size;const ctx=cv.getContext('2d');ctx.drawImage(im,0,0);const pixels=ctx.getImageData(0,0,S.size,S.size).data;let transparent=false;for(let i=3;i<pixels.length;i+=4)if(pixels[i]<220){transparent=true;break;}if(!transparent)throw Error('替换帧需要真实透明背景');const old=S.frames[S.index];C.undo={index:S.index,frame:{...old,offset:[...old.offset]},epoch:S.sourceEpoch};old.offset=[0,0];old.override=value;old.overrideImage=im;changed();renderTimeline();draw();$('undoFrame').disabled=false;toast('已替换完整姿势，其他帧保持原样');}catch(e){toast(e.message);}}
 function downloadCharacter(){captureBound();if(!C.project)return toast('先打开角色工程');downloadBlob(new Blob([JSON.stringify(C.project,null,2)],{type:'application/json'}),C.project.name+'-角色工程.json');}
 async function importCharacter(f){if(!f)return;try{const p=JSON.parse(await f.text());const saved=await api('/projects',p);await flushWorkspace();await useCharacter(saved);await flushWorkspace(false);renderCharacter();toast('已导入为独立角色工程');}catch(e){toast(e.message);}}
-function bindCharacters(){window.characterProject={actionDescription:id=>C.project?.spec.profile==='bow'?({light:'搭箭、拉弦、瞄准、释放与收势，保持握持和弓弦关系。',heavy:'满弓蓄力，松弦后手臂缓冲收势。'}[id]||'持弓人物保持重心，装备随身体自然联动。'):mageProfile()?({light:'聚能、伸杖、释放紫色魔法、收杖恢复。',heavy:'稳住重心蓄力，释放法术后回收法杖。'}[id]||'保持骷髅与紫袍，法杖随身体自然联动。'):null,actionPrompt:roleActionPrompt,actionLabel:id=>(C.project?.spec.profile==='bow'?({light:'射箭',heavy:'蓄力射箭'}[id]||actionName(id)):mageProfile()?({light:'法杖施法',heavy:'蓄力施法'}[id]||actionName(id)):actionName(id)),changed:autoSave,beforeSource,constraints:projectConstraints,spec:()=>C.project?.spec.frozen?C.project.spec:null,context:()=>C.project?{id:C.project.id,spec_version:C.project.spec.version}:null,palette:()=>C.project?.spec.frozen?C.project.spec.palette:null};$('characterButton').onclick=async()=>{$('characterDialog').showModal();renderCharacter();await listCharacters();};$('copyKnight').onclick=copyTemplate;$('newCharacter').onclick=createCharacter;$('captureAction').onclick=()=>addAction();$('cloneCharacter').onclick=cloneCharacter;$('freezeCharacter').onclick=freezeCharacter;$('exportCharacter').onclick=exportCharacter;$('downloadCharacter').onclick=downloadCharacter;$('importCharacter').onclick=()=>$('characterFile').click();$('characterFile').onchange=async e=>{await importCharacter(e.target.files[0]);e.target.value='';};$('saveCharacterSpec').onclick=async()=>{if(!C.project)return;C.project.name=$('characterName').value;C.project.spec.identity=$('specIdentity').value;C.project.spec.weapon=$('specWeapon').value;C.project.spec.version++;Object.values(C.project.actions).forEach(a=>a.review='pending');await flushWorkspace();renderCharacter();toast('规格描述已更新，已有动作需重新复核');};$('replaceFrame').onclick=()=>$('replacementFile').click();$('replacementFile').onchange=async e=>{await replaceFrame(e.target.files[0]);e.target.value='';};$('undoFrame').onclick=()=>{if(C.undo?.epoch!==S.sourceEpoch)return toast('这份撤销不属于当前动作');S.frames[C.undo.index]=C.undo.frame;C.undo=null;$('undoFrame').disabled=true;changed();renderTimeline();draw();};document.addEventListener('input',e=>{if(e.target.matches('input,textarea,select'))autoSave();});document.addEventListener('change',()=>autoSave());document.addEventListener('click',()=>setTimeout(autoSave,0));document.addEventListener('visibilitychange',()=>{if(document.hidden)flushWorkspace();});window.addEventListener('pagehide',()=>flushWorkspace(false));C.ready=restoreWorkspace();}
+function bindCharacters(){window.characterProject={actionDescription:id=>C.project?.spec.profile==='bow'?({light:'搭箭、拉弦、瞄准、释放与收势，保持握持和弓弦关系。',heavy:'满弓蓄力，松弦后手臂缓冲收势。'}[id]||'持弓人物保持重心，装备随身体自然联动。'):mageProfile()?({light:'聚能、伸杖、释放紫色魔法、收杖恢复。',heavy:'稳住重心蓄力，释放法术后回收法杖。'}[id]||'保持骷髅与紫袍，法杖随身体自然联动。'):null,actionPrompt:roleActionPrompt,label:projectActionLabel,prompt:id=>C.project?.actions[id]?.prompt||'',hasAction:id=>!!C.project?.actions[id],isDraft:id=>!!C.project?.actions[id]?.draft,actionLabel:id=>(C.project?.spec.profile==='bow'?({light:'射箭',heavy:'蓄力射箭'}[id]||actionName(id)):mageProfile()?({light:'法杖施法',heavy:'蓄力施法'}[id]||actionName(id)):actionName(id)),changed:autoSave,beforeSource,constraints:projectConstraints,spec:()=>C.project?.spec.frozen?C.project.spec:null,context:()=>C.project?{id:C.project.id,spec_version:C.project.spec.version}:null,palette:()=>C.project?.spec.frozen?C.project.spec.palette:null};$('characterButton').onclick=async()=>{C.pendingDelete=null;$('customActionForm').hidden=true;$('characterDialog').showModal();renderCharacter();await listCharacters();};$('copyKnight').onclick=copyTemplate;$('newCharacter').onclick=createCharacter;$('captureAction').onclick=()=>addAction();$('newCustomAction').onclick=()=>{$('customActionForm').hidden=false;$('customActionName').value='';$('customActionName').focus();};$('cancelCustomAction').onclick=()=>{$('customActionForm').hidden=true;};$('customActionForm').onsubmit=async e=>{e.preventDefault();if(await addCustomAction($('customActionName').value)){$('customActionForm').hidden=true;$('customActionName').value='';}};$('cloneCharacter').onclick=cloneCharacter;$('freezeCharacter').onclick=freezeCharacter;$('exportCharacter').onclick=exportCharacter;$('downloadCharacter').onclick=downloadCharacter;$('importCharacter').onclick=()=>$('characterFile').click();$('characterFile').onchange=async e=>{await importCharacter(e.target.files[0]);e.target.value='';};$('saveCharacterSpec').onclick=async()=>{if(!C.project)return;C.project.name=$('characterName').value;C.project.spec.identity=$('specIdentity').value;C.project.spec.weapon=$('specWeapon').value;C.project.spec.version++;Object.values(C.project.actions).forEach(a=>a.review='pending');await flushWorkspace();renderCharacter();toast('规格描述已更新，已有动作需重新复核');};$('replaceFrame').onclick=()=>$('replacementFile').click();$('replacementFile').onchange=async e=>{await replaceFrame(e.target.files[0]);e.target.value='';};$('undoFrame').onclick=()=>{if(C.undo?.epoch!==S.sourceEpoch)return toast('这份撤销不属于当前动作');S.frames[C.undo.index]=C.undo.frame;C.undo=null;$('undoFrame').disabled=true;changed();renderTimeline();draw();};document.addEventListener('input',e=>{if(e.target.matches('input,textarea,select'))autoSave();});document.addEventListener('change',()=>autoSave());document.addEventListener('click',()=>setTimeout(autoSave,0));document.addEventListener('visibilitychange',()=>{if(document.hidden)flushWorkspace();});window.addEventListener('pagehide',()=>flushWorkspace(false));C.ready=restoreWorkspace();}
 bindCharacters();
