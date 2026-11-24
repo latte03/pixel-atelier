@@ -2,7 +2,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/services/api'
 import type { CharacterAction, CharacterProject, ProjectSummary } from '@/types/models'
-import { createDraftAction, insertActionAfter, moveAction, uniqueActionId } from '@/utils/project'
+import { createDraftAction, insertActionAfter, isIdleActionId, moveAction, uniqueActionId } from '@/utils/project'
 
 export const useProjectStore = defineStore('project', () => {
   const projects = shallowRef<ProjectSummary[]>([])
@@ -20,7 +20,7 @@ export const useProjectStore = defineStore('project', () => {
     const p = project.value
     if (!p) return ''
     return p.masterBasis?.action
-      || Object.keys(p.actions).filter(id => /^idle(?:_v[0-9]+)?$/.test(id) && !p.actions[id].draft).at(-1)
+      || Object.keys(p.actions).filter(id => isIdleActionId(id) && !p.actions[id].draft).at(-1)
       || ''
   })
   const hasMaster = computed(() => !!project.value?.masterBasis && !!project.value?.master)

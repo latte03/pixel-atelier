@@ -1,16 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { DownloadOutline, SaveOutline } from '@vicons/ionicons5'
+import { DownloadOutline } from '@vicons/ionicons5'
 import { NButton, NCard, NCheckbox, NDivider, NFormItem, NIcon, NInputNumber, NSelect, useMessage } from 'naive-ui'
-import { useProjectStore } from '@/stores/project'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 const props = defineProps<{ actionId: string }>()
 const emit = defineEmits<{ exported: [] }>()
-const projectStore = useProjectStore()
 const workspace = useWorkspaceStore()
 const message = useMessage()
-const isIdle = computed(() => /^idle(?:_v[0-9]+)?$/.test(props.actionId))
 
 function updateDuration(value: number | null) {
   if (value === null) return
@@ -24,14 +20,6 @@ function updateOffset(axis: 0 | 1, value: number | null) {
 }
 function updateColors(value: number) {
   workspace.updateRecipe(props.actionId, { colors: value })
-}
-async function finalize() {
-  try {
-    await workspace.finalizeIdle(props.actionId)
-    message.success('待机已定稿并设为角色母版')
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : String(error))
-  }
 }
 </script>
 
@@ -63,10 +51,7 @@ async function finalize() {
     <NFormItem label="导出色数">
       <NSelect :value="workspace.recipe?.colors || 64" :options="[32, 64, 128, 255].map(value => ({ label: `${value} 色`, value }))" size="small" @update:value="updateColors" />
     </NFormItem>
-    <NButton v-if="isIdle && !projectStore.hasMaster" type="primary" block :loading="projectStore.saving" @click="finalize">
-      <template #icon><NIcon><SaveOutline /></NIcon></template>定稿待机并设为母版
-    </NButton>
-    <NButton v-else block :disabled="!workspace.hasFrames" @click="emit('exported')">
+    <NButton block :disabled="!workspace.hasFrames" @click="emit('exported')">
       <template #icon><NIcon><DownloadOutline /></NIcon></template>导出当前动作
     </NButton>
   </NCard>

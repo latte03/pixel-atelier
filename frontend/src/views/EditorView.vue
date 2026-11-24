@@ -2,11 +2,12 @@
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  DownloadOutline, ImagesOutline, SaveOutline, ScanOutline,
+  DownloadOutline, ImagesOutline, ScanOutline,
 } from '@vicons/ionicons5'
 import { NAlert, NButton, NCard, NIcon, NModal, NSelect, NSpace, useMessage } from 'naive-ui'
 import ActionList from '@/components/ActionList.vue'
 import FrameInspector from '@/components/FrameInspector.vue'
+import IdleFinalizeBar from '@/components/IdleFinalizeBar.vue'
 import ProjectIdentity from '@/components/ProjectIdentity.vue'
 import SpriteCanvas from '@/components/SpriteCanvas.vue'
 import Timeline from '@/components/Timeline.vue'
@@ -14,6 +15,7 @@ import { useCharacterRoute } from '@/composables/useCharacterRoute'
 import { useProjectStore } from '@/stores/project'
 import { useWorkspaceStore } from '@/stores/workspace'
 import type { ExportResult } from '@/types/models'
+import { isIdleActionId } from '@/utils/project'
 
 const router = useRouter()
 const projectStore = useProjectStore()
@@ -23,7 +25,7 @@ const message = useMessage()
 const loading = ref(false)
 const exportResult = ref<ExportResult | null>(null)
 const showExport = ref(false)
-const isIdleAction = computed(() => /^idle(?:_v[0-9]+)?$/.test(actionId.value))
+const isIdleAction = computed(() => isIdleActionId(actionId.value))
 let loadVersion = 0
 
 async function load(id = actionId.value) {
@@ -45,15 +47,6 @@ async function exportCurrent() {
     const result = await workspace.exportCurrent(action.value?.label || projectStore.project?.name || '像素动作')
     exportResult.value = result
     showExport.value = true
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : String(error))
-  }
-}
-
-async function finalizeIdle() {
-  try {
-    await workspace.finalizeIdle(actionId.value)
-    message.success('待机已定稿，后续动作会沿用这个母版')
   } catch (error) {
     message.error(error instanceof Error ? error.message : String(error))
   }
@@ -102,7 +95,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keydown))
 </script>
 
 <template>
-  <div class="page editor-page" :aria-busy="loading">
+  <div class="page editor-page" :class="{ 'finalizing-idle': isIdleAction }" :aria-busy="loading">
     <ProjectIdentity v-if="projectStore.project" />
     <template v-if="!projectStore.project || !action">
       <div class="empty-state">
@@ -121,10 +114,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keydown))
         </div>
         <NSpace :size="8">
           <NButton @click="viewSheet"><template #icon><NIcon><ImagesOutline /></NIcon></template>查看动作图表</NButton>
-          <NButton v-if="isIdleAction && !projectStore.hasMaster" type="primary" :loading="projectStore.saving" @click="finalizeIdle"><template #icon><NIcon><SaveOutline /></NIcon></template>定稿待机并设为母版</NButton>
           <NButton type="primary" :disabled="!workspace.hasFrames" @click="exportCurrent"><template #icon><NIcon><DownloadOutline /></NIcon></template>导出当前动作</NButton>
         </NSpace>
       </div>
+      <IdleFinalizeBar v-if="isIdleAction" :action-id="actionId" />
       <NAlert v-if="projectStore.conflict" type="error" :bordered="false" class="editor-alert">
         工程保存冲突。当前帧仍保留在本机，请先下载工程备份，避免覆盖其他页面的修改。
       </NAlert>
@@ -168,6 +161,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keydown))
 
 <style scoped>
 .editor-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+.editor-page.finalizing-idle { padding-top: 20px; }
+.editor-page.finalizing-idle :deep(.sprite-stage) { height: clamp(240px, 28vh, 440px); }
 .editor-heading h1 { margin: 7px 0 5px; font-size: 25px; letter-spacing: -.035em; }
 .editor-heading p { margin: 0; color: var(--muted); font-size: 12px; }
 .editor-alert { margin-bottom: 14px; }

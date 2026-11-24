@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { api } from '@/services/api'
 import { fetchDataUrl, loadImage } from '@/services/images'
 import type { CharacterAction, ExportResult, GenerationJob, SpriteFrame, SpriteRecipe, Vec2 } from '@/types/models'
-import { nextActionVersion, totalDuration } from '@/utils/project'
+import { isIdleActionId, nextActionVersion, totalDuration } from '@/utils/project'
 import { frameOverflow, normalizeLayout, renderFrame, sliceSheet, type SheetLayout } from '@/utils/sheet'
 import { useProjectStore } from './project'
 
@@ -245,7 +245,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function finalizeIdle(actionId: string) {
     const project = projectStore.project
-    if (!project || !/^idle(?:_v[0-9]+)?$/.test(actionId) || !hasFrames.value) {
+    if (!project || !isIdleActionId(actionId) || !hasFrames.value) {
       throw new Error('请先打开一段待机动作')
     }
     if (frames.value.length < 2) throw new Error('待机需要至少两帧')

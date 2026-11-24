@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { CloudUploadOutline, DocumentTextOutline, SparklesOutline } from '@vicons/ionicons5'
-import { NAlert, NButton, NCard, NFormItem, NIcon, NInput, NScrollbar, NSelect, NSpin, NTag, NUpload, useMessage } from 'naive-ui'
-import { readFile, fetchDataUrl } from '@/services/images'
+import { DocumentTextOutline, SparklesOutline } from '@vicons/ionicons5'
+import { NAlert, NButton, NCard, NFormItem, NIcon, NInput, NScrollbar, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
+import ReferencePicker from '@/components/ReferencePicker.vue'
 import { useGenerationStore } from '@/stores/generation'
 import { useProjectStore } from '@/stores/project'
-import { useReferenceStore } from '@/stores/reference'
 import { buildPrompt } from '@/utils/prompt'
+import { isIdleActionId } from '@/utils/project'
+import { composeReferenceImages, type ReferenceImage } from '@/utils/references'
 
 const props = defineProps<{ actionId: string }>()
 const emit = defineEmits<{ completed: [job: import('@/types/models').GenerationJob] }>()
 const projectStore = useProjectStore()
 const generationStore = useGenerationStore()
-const referenceStore = useReferenceStore()
 const message = useMessage()
-const referenceData = ref('')
-const referenceName = ref('')
+const references = ref<ReferenceImage[]>([])
+const preparingReference = ref(false)
 const identity = ref('')
 const weapon = ref('')
 const style = ref('chibi')
@@ -27,9 +27,9 @@ const handledJob = ref('')
 
 const project = computed(() => projectStore.project!)
 const action = computed(() => project.value.actions[props.actionId])
-const isIdle = computed(() => /^idle(?:_v[0-9]+)?$/.test(props.actionId))
+const isIdle = computed(() => isIdleActionId(props.actionId))
 const follow = computed(() => !isIdle.value && projectStore.hasMaster)
-const effectiveReference = computed(() => follow.value ? project.value.master || '' : referenceData.value)
+const effectiveReference = computed(() => follow.value ? project.value.master || '' : '')
 const prompt = computed(() => buildPrompt({
   project: project.value,
   actionId: props.actionId,
@@ -44,8 +44,9 @@ const prompt = computed(() => buildPrompt({
   kind: 'sheet',
   layout: { cols: 4, rows: frameCount.value / 4, count: frameCount.value },
   presetFacing: ['idle', 'run', 'dash', 'light', 'heavy', 'jump', 'hurt', 'knockdown'].includes(props.actionId),
+  referenceCount: follow.value ? 1 : references.value.length,
 }))
-const canSubmit = computed(() => !!prompt.value && (!!effectiveReference.value || isIdle.value) && !generationStore.busy)
+const canSubmit = computed(() => !!prompt.value && (!!effectiveReference.value || isIdle.value) && !generationStore.busy && !preparingReference.value)
 const canResumeDownload = computed(() => generationStore.activeJob?.status === 'failed' && generationStore.activeJob.events.some(event =>
   event.type === 'download' && event.status === 'failed' && event.can_resume === true,
 ))
@@ -66,12 +67,6 @@ async function initialize() {
   weapon.value = p.spec.weapon
   motion.value = p.actions[props.actionId]?.prompt || defaultMotion(props.actionId)
   if (p.spec.profile === 'bow') keep.value = '无箭袋，不画取箭；左手持弓、右手拉弦，弓臂与弓弦关系清楚。'
-  const selected = referenceStore.selected
-  if (selected && !follow.value) {
-    referenceName.value = selected.name
-    referenceData.value = await fetchDataUrl(selected.url)
-    referenceStore.clear()
-  }
   handledJob.value = ''
 }
 
@@ -93,25 +88,26 @@ function defaultMotion(id: string) {
 
 function p() { return projectStore.project }
 
-async function chooseFile(value: File | null) {
-  if (!value) return
-  if (!['image/png', 'image/jpeg'].includes(value.type)) return message.error('请选择 PNG 或 JPG')
-  if (value.size > 12 * 1024 * 1024) return message.error('图片请小于 12MB')
-  referenceData.value = await readFile(value)
-  referenceName.value = value.name
-}
-
 async function submit() {
   if (!canSubmit.value) return
   try {
     handledJob.value = ''
+    let reference = effectiveReference.value
+    if (!follow.value && references.value.length) {
+      preparingReference.value = true
+      try {
+        reference = await composeReferenceImages(references.value)
+      } finally {
+        preparingReference.value = false
+      }
+    }
     await generationStore.submit({
       prompt: prompt.value,
       action: props.actionId,
       kind: 'sheet',
       layout: { cols: 4, rows: frameCount.value / 4, count: frameCount.value },
       character_context: { id: project.value.id!, spec_version: project.value.spec.version },
-      ...(effectiveReference.value ? { reference: effectiveReference.value } : { from_text: true }),
+      ...(reference ? { reference } : { from_text: true }),
     })
     message.success('任务已提交，完成后会自动切帧并进入编辑')
   } catch (error) {
@@ -128,26 +124,10 @@ async function submit() {
         <h2>{{ isIdle ? '制作待机母版' : `制作「${action?.label || actionId}」` }}</h2>
         <p>{{ isIdle ? '生成 8 帧连续待机。完成后自动切帧、保存并进入时间轴。' : '沿用已定稿的角色母版，生成这张动作图表。' }}</p>
       </div>
-      <NTag :type="follow ? 'success' : 'info'" :bordered="false">{{ follow ? '使用角色母版' : isIdle ? '支持文字或参考图' : '需要母版' }}</NTag>
+      <NTag :type="follow ? 'success' : 'info'" :bordered="false">{{ follow ? '使用角色母版' : isIdle ? '支持多图或母版导入' : '需要母版' }}</NTag>
     </div>
 
-    <div v-if="!follow" class="reference-section">
-      <div class="reference-preview" :class="{ filled: referenceData }">
-        <img v-if="referenceData" :src="referenceData" alt="角色参考图" />
-        <template v-else>
-          <NIcon><CloudUploadOutline /></NIcon>
-          <strong>上传角色参考图</strong>
-          <small>PNG / JPG · 最大 12MB</small>
-        </template>
-      </div>
-      <div class="reference-copy">
-        <h3>{{ referenceName || '也可以直接用文字制作' }}</h3>
-        <p>有参考图时，人物比例、发型、服装和装备会严格沿用。没有参考图时，下方角色特征就是唯一造型依据。</p>
-        <NUpload accept="image/png,image/jpeg" :max="1" :show-file-list="false" @change="({ file }) => chooseFile(file.file)">
-          <NButton size="small"><template #icon><NIcon><CloudUploadOutline /></NIcon></template>{{ referenceData ? '更换参考图' : '选择参考图' }}</NButton>
-        </NUpload>
-      </div>
-    </div>
+    <ReferencePicker v-if="!follow" v-model="references" :project-id="project.id || ''" :allow-master-import="isIdle" />
     <div v-else class="master-reference">
       <img :src="project.master || ''" alt="已定稿角色母版" />
       <div><strong>角色母版已锁定</strong><small>后续动作会保持同一人物、装备与色板。</small></div>
@@ -207,7 +187,7 @@ async function submit() {
 
     <div class="generator-footer">
       <span>透明 PNG · 统一比例 · 自动保存</span>
-      <NButton type="primary" size="large" :loading="generationStore.submitting" :disabled="!canSubmit" @click="submit">
+      <NButton type="primary" size="large" :loading="generationStore.submitting || preparingReference" :disabled="!canSubmit" @click="submit">
         <template #icon><NIcon><SparklesOutline /></NIcon></template>
         {{ generationStore.activeJob ? (canResumeDownload ? '重新生成（重新计费）' : '重新生成') : '开始生成' }}
       </NButton>
@@ -220,16 +200,6 @@ async function submit() {
 .generator-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .generator-heading h2 { margin: 7px 0 6px; font-size: 22px; letter-spacing: -.03em; }
 .generator-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.reference-section { display: flex; gap: 18px; padding: 16px; margin-bottom: 20px; border: 1px solid var(--line); border-radius: 14px; background: #f9fbf8; }
-.reference-preview { display: grid; place-items: center; flex: 0 0 132px; height: 132px; overflow: hidden; border: 1px dashed #bdc9be; border-radius: 12px; color: #8b978e; background: #fff; }
-.reference-preview.filled { border-style: solid; background: #fff; }
-.reference-preview img { width: 100%; height: 100%; object-fit: contain; }
-.reference-preview .n-icon { font-size: 26px; }
-.reference-preview strong { margin-top: 8px; font-size: 12px; }
-.reference-preview small { font-size: 10px; }
-.reference-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
-.reference-copy h3 { margin: 0 0 7px; font-size: 14px; }
-.reference-copy p { max-width: 540px; margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .master-reference { display: flex; align-items: center; gap: 14px; padding: 12px 16px; margin-bottom: 20px; border: 1px solid #cfe0d5; border-radius: 14px; background: #f2f8f4; }
 .master-reference img { width: 56px; height: 56px; object-fit: contain; border-radius: 9px; background: #fff; }
 .master-reference div { display: flex; flex: 1; flex-direction: column; gap: 4px; }
@@ -251,5 +221,5 @@ async function submit() {
 .job-status small { font-size: 11px; opacity: .75; }
 .generator-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 18px; border-top: 1px solid var(--line); }
 .generator-footer > span { color: var(--muted); font-size: 11px; }
-@media (max-width: 820px) { .form-grid { grid-template-columns: 1fr; } .span-2 { grid-column: auto; } .reference-section { flex-direction: column; } .reference-preview { flex-basis: 160px; width: 100%; height: 160px; } }
+@media (max-width: 820px) { .form-grid { grid-template-columns: 1fr; } .span-2 { grid-column: auto; } }
 </style>

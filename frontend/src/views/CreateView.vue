@@ -11,6 +11,7 @@ import { useCharacterRoute } from '@/composables/useCharacterRoute'
 import { useProjectStore } from '@/stores/project'
 import { useWorkspaceStore } from '@/stores/workspace'
 import type { GenerationJob } from '@/types/models'
+import { isIdleActionId } from '@/utils/project'
 import { normalizeLayout } from '@/utils/sheet'
 
 const router = useRouter()
@@ -103,7 +104,7 @@ async function retrySlice() {
 async function followNextStep() {
   if (nextStep.value.action === 'open-idle') return editAction(projectStore.idleActionId)
   if (nextStep.value.action === 'idle') {
-    const idle = projectStore.actionEntries.find(([id, action]) => /^idle(?:_v[0-9]+)?$/.test(id) && action.draft)
+    const idle = projectStore.actionEntries.find(([id, action]) => isIdleActionId(id) && action.draft)
     if (idle) openAction(idle[0])
     return
   }

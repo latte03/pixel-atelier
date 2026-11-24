@@ -77,6 +77,22 @@ class ProjectTests(unittest.TestCase):
    self.assertEqual(new['revision'],2)
    with self.assertRaises(Conflict):store.save(p,p['id'],1)
    self.assertEqual(store.get(p['id'])['name'],'modified');self.assertEqual(json.loads((Path(t)/p['id']/'history/000001.json').read_text())['name'],'test')
+ def test_project_list_marks_finalized_masters(self):
+  with tempfile.TemporaryDirectory()as t:
+   store=ProjectStore(t)
+   idle=project();idle['master']=idle['actions']['idle']['source'];idle['masterBasis']={'action':'idle','frame':0}
+   saved=store.save(idle)
+   self.assertTrue(next(p for p in store.list() if p['id']==saved['id'])['hasMaster'])
+   draft=project();draft['actions']={}
+   saved=store.save(draft)
+   self.assertFalse(next(p for p in store.list() if p['id']==saved['id'])['hasMaster'])
+ def test_copied_idle_actions_can_become_master(self):
+  with tempfile.TemporaryDirectory()as t:
+   store=ProjectStore(t)
+   for action in ['idle_2','idle_v2']:
+    p=project();p['actions']={action:p['actions']['idle']};p['master']=p['actions'][action]['source'];p['masterBasis']={'action':action,'frame':0}
+    saved=store.save(p)
+    self.assertEqual(saved['masterBasis']['action'],action)
  def test_copy_is_independent(self):
   with tempfile.TemporaryDirectory()as t:
    store=ProjectStore(t);a=store.save(project());b=store.save(a);self.assertNotEqual(a['id'],b['id']);b['name']='copy';store.save(b,b['id'],1);self.assertEqual(store.get(a['id'])['name'],'test')

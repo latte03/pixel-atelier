@@ -36,6 +36,18 @@ export function actionIdBase(value: string): string {
   return /^[a-z]/.test(base) ? base : 'action'
 }
 
+export function isIdleActionId(value: string): boolean {
+  return /^idle(?:_v?\d+)?$/.test(value)
+}
+
+export function characterWorkflowStage(project: CharacterProject | null): number {
+  if (!project) return 0
+  const actions = Object.entries(project.actions)
+  if (!actions.some(([id, action]) => isIdleActionId(id) && !action.draft)) return 1
+  if (!project.masterBasis || !project.master) return 2
+  return actions.some(([, action]) => action.draft) ? 3 : 4
+}
+
 export function uniqueActionId(actions: Record<string, CharacterAction>, label: string, preferred = ''): string {
   let base = actionIdBase(preferred || label)
   if (!preferred && ['idle', 'run', 'dash', 'light', 'heavy', 'jump', 'hurt', 'knockdown'].includes(base)) {

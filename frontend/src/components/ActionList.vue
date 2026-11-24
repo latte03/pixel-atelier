@@ -5,7 +5,7 @@ import {
 } from '@vicons/ionicons5'
 import { NButton, NIcon, NInput, NScrollbar, NTooltip, useMessage } from 'naive-ui'
 import { useProjectStore } from '@/stores/project'
-import { actionStatus } from '@/utils/project'
+import { actionStatus, isIdleActionId } from '@/utils/project'
 
 const props = defineProps<{ activeActionId: string }>()
 const emit = defineEmits<{
@@ -26,7 +26,7 @@ function open(id: string) {
   const action = projectStore.project?.actions[id]
   if (!action) return
   if (action.draft) {
-    if (/^idle(?:_v[0-9]+)?$/.test(id) || projectStore.hasMaster) emit('create', id)
+    if (isIdleActionId(id) || projectStore.hasMaster) emit('create', id)
     else message.warning('先定稿待机母版，再制作其他动作')
     return
   }

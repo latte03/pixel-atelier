@@ -85,6 +85,7 @@ export interface ProjectSummary {
   actions: number
   parent_id?: string
   frozen: boolean
+  hasMaster: boolean
 }
 
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed'

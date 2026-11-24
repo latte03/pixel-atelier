@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SpriteRecipe } from '@/types/models'
 import {
-  createBlankProject, createDraftAction, insertActionAfter, moveAction,
+  createBlankProject, createDraftAction, characterWorkflowStage, insertActionAfter, isIdleActionId, moveAction,
   nextActionVersion, totalDuration, uniqueActionId, validateRecipe,
 } from './project'
 
@@ -36,6 +36,26 @@ describe('project actions', () => {
     expect(uniqueActionId(actions, 'run')).toBe('custom_run_2')
     const copied = { ...idle, label: '待机 · 副本' }
     expect(Object.keys(insertActionAfter(actions, 'idle', 'idle_2', copied))).toEqual(['idle', 'idle_2', 'custom_run'])
+  })
+
+  it('recognizes copied and versioned idle action ids', () => {
+    expect(['idle', 'idle_2', 'idle_v2'].every(isIdleActionId)).toBe(true)
+    expect(['walk', 'custom_idle', 'idle_extra'].some(isIdleActionId)).toBe(false)
+  })
+
+  it('tracks workflow completion through idle, master and remaining actions', () => {
+    const project = createBlankProject('流程测试')
+    expect(characterWorkflowStage(null)).toBe(0)
+    expect(characterWorkflowStage(project)).toBe(1)
+    project.actions.idle = createDraftAction('待机')
+    expect(characterWorkflowStage(project)).toBe(1)
+    project.actions.idle.draft = false
+    expect(characterWorkflowStage(project)).toBe(2)
+    project.master = 'data:image/png;base64,AA=='
+    project.masterBasis = { action: 'idle', frame: 0 }
+    expect(characterWorkflowStage(project)).toBe(4)
+    project.actions.walk = createDraftAction('行走')
+    expect(characterWorkflowStage(project)).toBe(3)
   })
 
   it('moves actions without mutating the input and clamps boundaries', () => {

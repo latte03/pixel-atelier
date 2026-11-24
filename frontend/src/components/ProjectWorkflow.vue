@@ -4,6 +4,7 @@ import { CheckmarkCircleOutline, EllipseOutline } from '@vicons/ionicons5'
 import { NCard, NIcon, NSpace, NTag } from 'naive-ui'
 import ActionList from '@/components/ActionList.vue'
 import { useProjectStore } from '@/stores/project'
+import { characterWorkflowStage } from '@/utils/project'
 
 const props = defineProps<{ actionId: string }>()
 const emit = defineEmits<{
@@ -12,7 +13,7 @@ const emit = defineEmits<{
   changed: []
 }>()
 const projectStore = useProjectStore()
-const stage = computed(() => !projectStore.idleActionId ? 0 : !projectStore.hasMaster ? 1 : 2)
+const stage = computed(() => characterWorkflowStage(projectStore.project))
 const stages = [
   { title: '创建角色', description: '确定工程与角色设定' },
   { title: '制作待机', description: '生成连续待机并自动切帧' },

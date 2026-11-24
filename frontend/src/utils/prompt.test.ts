@@ -39,6 +39,12 @@ describe('buildPrompt', () => {
     expect(value).toContain('七方向装备一致')
   })
 
+  it('describes multiple references as one character reference sheet', () => {
+    const value = prompt({ referenceCount: 3 })
+    expect(value).toContain('参考表包含 3 张同一角色的参考图')
+    expect(value).toContain('不要把参考表的分格画进结果')
+  })
+
   it('emits a single-pose prompt without sheet instructions', () => {
     const value = prompt({ kind: 'pose', layout: undefined })
     expect(value).toContain('只生成一张完整角色姿势图')

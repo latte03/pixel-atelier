@@ -14,6 +14,7 @@ export interface PromptInput {
   kind: 'pose' | 'sheet'
   layout?: { cols: number; rows: number; count: number }
   presetFacing?: boolean
+  referenceCount?: number
 }
 
 const STYLE_LABELS: Record<string, string> = {
@@ -32,6 +33,9 @@ export function buildPrompt(input: PromptInput): string {
     '【角色与目标】',
     input.project.name,
     `人物特征：${input.identity.trim() || input.project.spec.identity || '严格沿用参考图的脸部、发型、服装与识别点。'}`,
+    (input.referenceCount || 0) > 1
+      ? `随附参考表包含 ${input.referenceCount} 张同一角色的参考图，按从左到右、从上到下排列；综合各图的脸部、发型、服装、装备与画风，不要把参考表的分格画进结果。`
+      : '',
     '',
     '【美术规则】',
     STYLE_LABELS[input.style] || STYLE_LABELS.custom,

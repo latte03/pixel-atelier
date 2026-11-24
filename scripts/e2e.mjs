@@ -110,6 +110,13 @@ async function createArcher(page) {
   assert.match(page.url(), /\/projects\/[a-f0-9]{32}\/actions\/idle\/create$/)
 }
 
+async function workflowSteps(page) {
+  return page.locator('.workflow-step').evaluateAll(elements => elements.map(element => ({
+    done: element.classList.contains('done'),
+    active: element.classList.contains('active'),
+  })))
+}
+
 async function generateAndAssertEditor(page, heading) {
   await page.getByRole('button', { name: '开始生成' }).click()
   await page.waitForURL(/\/projects\/[a-f0-9]{32}\/actions\/[a-z0-9_]+\/editor/, { timeout: 30000 })
@@ -125,7 +132,7 @@ async function generateAndAssertEditor(page, heading) {
   assert.equal(await page.locator('.frame-strip').locator('xpath=ancestor::div[contains(@class, "n-scrollbar")][1]').count(), 1)
   assert.equal(await page.locator('.action-strip').locator('xpath=ancestor::div[contains(@class, "n-scrollbar")][1]').count(), 1)
   const timelineBox = await page.locator('.timeline-panel').boundingBox()
-  assert.ok(timelineBox && timelineBox.y < 850, '时间轴应出现在笔记本首屏')
+  assert.ok(timelineBox && timelineBox.y < 850, `时间轴应出现在笔记本首屏，当前 y=${timelineBox?.y}`)
 }
 
 try {
@@ -162,6 +169,20 @@ try {
   await configureMock(page, mockUrl)
   await createArcher(page)
   assert.equal(await page.getByRole('navigation', { name: '当前角色导航' }).count(), 1)
+  await page.locator('.reference-upload input[type="file"]').setInputFiles([
+    join(root, 'examples', 'knight', 'idle', 'atlas.png'),
+    join(root, 'examples', 'knight', 'run', 'atlas.png'),
+  ])
+  await page.locator('.reference-thumb').nth(1).waitFor()
+  assert.equal(await page.locator('.reference-thumb').count(), 2)
+  await page.getByRole('button', { name: '移除参考图 atlas.png' }).first().click()
+  assert.equal(await page.locator('.reference-thumb').count(), 1)
+  await page.locator('.reference-upload input[type="file"]').setInputFiles([join(root, 'examples', 'knight', 'idle', 'atlas.png')])
+  await page.locator('.reference-thumb').nth(1).waitFor()
+  assert.equal(await page.locator('.reference-thumb').count(), 2)
+  await page.locator('.idle-reference').screenshot({ path: join(artifacts, 'e2e-references.png') })
+  await page.locator('.prompt-preview summary').click()
+  assert.match(await page.locator('.prompt-preview pre').innerText(), /参考表包含 2 张同一角色的参考图/)
   await generateAndAssertEditor(page, '待机母版')
 
   await page.reload()
@@ -172,6 +193,12 @@ try {
   await page.getByRole('button', { name: '查看动作图表' }).click()
   await page.waitForURL(/\/projects\/[a-f0-9]{32}\/actions\/idle\/create$/)
   await page.getByRole('heading', { name: '查看动作图表' }).waitFor()
+  assert.deepEqual(await workflowSteps(page), [
+    { done: true, active: false },
+    { done: true, active: false },
+    { done: false, active: true },
+    { done: false, active: false },
+  ])
   await page.locator('.sheet-preview img').waitFor({ state: 'visible' })
   await page.locator('.sheet-prompt summary').click()
   const promptScroll = await page.locator('.sheet-prompt .n-scrollbar-container').evaluate(element => ({
@@ -215,8 +242,39 @@ try {
   assert.equal(await page.getByRole('textbox', { name: '当前帧停留时长' }).inputValue(), '120')
   assert.equal(await page.getByRole('textbox', { name: '水平偏移' }).inputValue(), '4')
 
-  await page.locator('.editor-heading').getByRole('button', { name: '定稿待机并设为母版' }).click()
+  const idleFinalizeBar = page.locator('.idle-finalize-bar')
+  await idleFinalizeBar.getByRole('button', { name: '定稿待机并设为母版' }).click()
   await page.getByText('色板已冻结', { exact: true }).waitFor()
+  const updateMaster = idleFinalizeBar.getByRole('button', { name: '更新母版' })
+  await updateMaster.waitFor()
+  await page.locator('.stage-badge').filter({ hasText: 'FRAME 03 / 8' }).waitFor()
+  await page.getByRole('button', { name: '选择第 2 帧' }).click()
+  await page.locator('.stage-badge').filter({ hasText: 'FRAME 02 / 8' }).waitFor()
+  await updateMaster.click()
+  const projectId = page.url().match(/\/projects\/([a-f0-9]{32})\//)[1]
+  assert.deepEqual(await page.evaluate(async id => {
+    const project = await (await fetch(`/project/${id}`)).json()
+    return project.masterBasis
+  }, projectId), { action: 'idle', frame: 1 })
+
+  await page.getByRole('button', { name: '复制当前动作' }).click()
+  await page.getByRole('heading', { name: '待机母版 · 副本', exact: true }).waitFor()
+  assert.match(page.url(), /\/actions\/idle_2\/editor$/)
+  await idleFinalizeBar.getByRole('button', { name: '更换为当前待机母版' }).click()
+  assert.deepEqual(await page.evaluate(async id => {
+    const project = await (await fetch(`/project/${id}`)).json()
+    return project.masterBasis
+  }, projectId), { action: 'idle_2', frame: 0 })
+  await page.locator('.action-chip').first().click()
+  await page.getByRole('heading', { name: '待机母版', exact: true }).waitFor()
+  await idleFinalizeBar.getByRole('button', { name: '更换为当前待机母版' }).click()
+  await page.locator('.action-chip').filter({ hasText: '待机母版 · 副本' }).click()
+  await page.getByRole('heading', { name: '待机母版 · 副本', exact: true }).waitFor()
+  await page.getByRole('button', { name: '删除当前动作' }).click()
+  await page.getByRole('button', { name: '确认删除当前动作' }).click()
+  await page.getByRole('heading', { name: '待机母版', exact: true }).waitFor()
+  await idleFinalizeBar.getByRole('button', { name: '更新母版' }).waitFor()
+
   await page.locator('.editor-heading').getByRole('button', { name: '导出当前动作' }).click()
   await page.locator('.n-modal').waitFor({ state: 'visible' })
   assert.match(await page.locator('.export-stats strong').innerText(), /^8 帧/)
@@ -239,6 +297,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight), '外层页面不应滚动')
   const contentScroll = page.locator('.app-content-scroll > .n-scrollbar-container')
   assert.ok(await contentScroll.evaluate(element => element.scrollHeight > element.clientHeight), '行走编辑内容应在内部滚动')
+  await page.locator('.editor-page[aria-busy="false"]').waitFor()
   await page.locator('.editor-heading').hover()
   await page.mouse.wheel(0, 600)
   await page.waitForFunction(() => document.querySelector('.app-content-scroll > .n-scrollbar-container')?.scrollTop > 0)
@@ -254,6 +313,46 @@ try {
   assert.equal(await page.locator('.project-identity').getByText('E2E 弓箭手', { exact: true }).count(), 0)
   await page.screenshot({ path: join(artifacts, 'e2e-works.png'), fullPage: true })
   const originalProjectId = walkDeepLink.match(/\/projects\/([a-f0-9]{32})\//)?.[1]
+
+  await page.getByRole('button', { name: '新建角色' }).click()
+  await page.getByPlaceholder('例如：绿兜帽弓箭手').fill('E2E 导入目标')
+  await page.locator('.template-option').filter({ hasText: '空白角色' }).click()
+  await page.getByRole('button', { name: '创建并开始' }).click()
+  await page.waitForURL(/\/projects\/[a-f0-9]{32}\/actions\/idle\/create$/)
+  await page.getByRole('button', { name: '导入母版作为参考' }).click()
+  const importDialog = page.locator('.master-import-modal')
+  await importDialog.waitFor()
+  assert.match(await importDialog.locator('.import-note').innerText(), /不会定稿当前角色/)
+  await importDialog.locator('.master-option').filter({ hasText: 'E2E 弓箭手' }).click()
+  await importDialog.locator('.master-preview img').waitFor()
+  await page.screenshot({ path: join(artifacts, 'e2e-master-import.png') })
+  await importDialog.getByRole('button', { name: '使用这个参考母版' }).click()
+  await importDialog.waitFor({ state: 'hidden' })
+  assert.equal(await page.locator('.reference-thumb').count(), 1)
+  assert.match(await page.locator('.reference-thumb').innerText(), /E2E 弓箭手 · 待机母版/)
+  assert.match(await page.locator('.reference-thumb').innerText(), /其他角色母版/)
+  await generateAndAssertEditor(page, '待机母版')
+  const importedFinalizeBar = page.locator('.idle-finalize-bar')
+  await importedFinalizeBar.waitFor()
+  const importedFinalize = importedFinalizeBar.getByRole('button', { name: '定稿待机并设为母版' })
+  assert.ok(await importedFinalize.count() > 0, '待机编辑页必须提供定稿入口')
+  const importedContentScroll = page.locator('.app-content-scroll > .n-scrollbar-container')
+  await importedContentScroll.evaluate(element => { element.scrollTop = element.scrollHeight * 0.55 })
+  assert.ok(await importedFinalize.evaluate(button => {
+    const rect = button.getBoundingClientRect()
+    const container = document.querySelector('.app-content-scroll > .n-scrollbar-container').getBoundingClientRect()
+    return rect.top >= container.top && rect.bottom <= container.bottom
+  }), '滚到帧编辑中段后仍应看得到定稿母版入口')
+  await importedFinalize.click()
+  await page.getByText('色板已冻结', { exact: true }).waitFor()
+  await importedFinalizeBar.getByRole('button', { name: '更新母版' }).waitFor()
+  await page.getByRole('button', { name: '查看动作图表' }).click()
+  await page.waitForURL(/\/projects\/[a-f0-9]{32}\/actions\/idle\/create$/)
+  await page.locator('.next-card h2').filter({ hasText: '检查并交付' }).waitFor()
+  assert.deepEqual(await workflowSteps(page), Array.from({ length: 4 }, () => ({ done: true, active: false })))
+  await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '作品' }).click()
+  await page.waitForURL(/\/works$/)
+
   await page.locator('.project-card').filter({ hasText: 'E2E 弓箭手' }).getByRole('button', { name: '复制' }).click()
   const cloneCard = page.locator('.project-card').filter({ hasText: 'E2E 弓箭手 · 副本' })
   await cloneCard.waitFor()
@@ -319,6 +418,8 @@ try {
     routeDeepLink: true,
     characterSwitch: true,
     globalPageClearsCharacter: true,
+    multipleReferences: true,
+    importedMasterAsReference: true,
     downloadResumeWithoutRegeneration: true,
     screenshot: 'output/playwright/e2e-editor.png',
   }, null, 2))

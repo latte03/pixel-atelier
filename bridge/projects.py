@@ -61,7 +61,7 @@ def validate(p):
             raise ValueError('待机母版来源无效')
         action = basis['action']
         frame = basis.get('frame')
-        if (not re.fullmatch(r'idle(?:_v[0-9]+)?', action) or action not in actions
+        if (not re.fullmatch(r'idle(?:_v?[0-9]+)?', action) or action not in actions
                 or type(frame) is not int or not 0 <= frame < actions[action]['recipe']['count']
                 or not isinstance(p.get('master'), str) or not p['master']):
             raise ValueError('待机母版须关联工程中的有效待机帧')
@@ -96,7 +96,7 @@ class ProjectStore:
         return self.root/pid/'project.json'
     def get(self,pid):return json.loads(self.path(pid).read_text())
     def list(self):
-        return sorted([{'id':p['id'],'name':p['name'],'revision':p['revision'],'updated_at':p['updated_at'],'actions':len(p['actions']),'parent_id':p.get('parent_id'),'frozen':p['spec'].get('frozen',False)}for p in [json.loads(f.read_text())for f in self.root.glob('*/project.json')]],key=lambda p:p['updated_at'],reverse=True)
+        return sorted([{'id':p['id'],'name':p['name'],'revision':p['revision'],'updated_at':p['updated_at'],'actions':len(p['actions']),'parent_id':p.get('parent_id'),'frozen':p['spec'].get('frozen',False),'hasMaster':bool(p.get('masterBasis') and p.get('master'))}for p in [json.loads(f.read_text())for f in self.root.glob('*/project.json')]],key=lambda p:p['updated_at'],reverse=True)
     def save(self,data,pid=None,expected=None):
         p=copy.deepcopy(validate(data))
         with GUARD:
