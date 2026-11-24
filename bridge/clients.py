@@ -1,11 +1,15 @@
 """OpenAI-compatible image and chat clients driven by user-supplied API keys."""
 import base64
+import http.client
+import io
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
+from PIL import Image
 
 try:
     from .rpc import BridgeError, inspect_sprite_png
@@ -13,6 +17,19 @@ except ImportError:
     from rpc import BridgeError, inspect_sprite_png
 
 USER_AGENT = 'pixel-atelier-bridge/0.1'
+
+
+def _read_json(response, incomplete_message):
+    try:
+        body = response.read()
+    except http.client.IncompleteRead as error:
+        try:
+            return json.loads(error.partial.decode('utf-8'))
+        except (UnicodeDecodeError, ValueError) as partial_error:
+            raise BridgeError(
+                f'{incomplete_message}（已接收 {len(error.partial)} 字节，仍缺 {error.expected} 字节）'
+            ) from partial_error
+    return json.loads(body.decode('utf-8'))
 
 
 def _http_json(url, payload=None, api_key=None, method=None, timeout=60):
@@ -26,7 +43,7 @@ def _http_json(url, payload=None, api_key=None, method=None, timeout=60):
     request = urllib.request.Request(url, data=data, headers=headers, method=method or ('POST' if data else 'GET'))
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode('utf-8'))
+            return _read_json(response, 'API 响应传输中断，请重试')
     except urllib.error.HTTPError as error:
         detail = ''
         try:
@@ -51,15 +68,70 @@ def fetch_models(base_url, api_key, timeout=30):
     return models
 
 
+def _complete_png(data):
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            if image.format != 'PNG':
+                return False
+            image.verify()
+        return True
+    except Exception:
+        return False
+
+
 def _download(url, timeout=120):
     if url.startswith('data:'):
         return base64.b64decode(url.split(',', 1)[-1])
-    request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+        raise BridgeError('下载生成图片失败：图片链接格式无效')
+    data = bytearray()
+    last_error = None
+    for _ in range(3):
+        headers = {'User-Agent': USER_AGENT}
+        if data:
+            headers['Range'] = f'bytes={len(data)}-'
+        request = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if data and response.status == 200:
+                    data.clear()
+                elif response.status == 206:
+                    content_range = response.headers.get('Content-Range', '')
+                    if not content_range.startswith(f'bytes {len(data)}-'):
+                        raise BridgeError('下载生成图片失败：续传位置不匹配')
+                data.extend(response.read())
+                return bytes(data)
+        except urllib.error.HTTPError as error:
+            raise BridgeError(f'下载生成图片失败：API 返回 {error.code}') from error
+        except (urllib.error.URLError, OSError, http.client.IncompleteRead) as error:
+            if isinstance(error, http.client.IncompleteRead):
+                data.extend(error.partial)
+                if _complete_png(data):
+                    return bytes(data)
+            last_error = error
+    raise BridgeError(f'下载生成图片失败：响应未完整传输（已接收 {len(data)} 字节）') from last_error
+
+
+def _save_png(raw, output):
+    out = Path(output).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / 'result-0.png'
+    temporary = out / 'result-0.png.part'
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.read()
-    except (urllib.error.URLError, OSError) as error:
-        raise BridgeError(f'下载生成图片失败：{error}') from error
+        temporary.write_bytes(raw)
+        inspect_sprite_png(temporary)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+    temporary.replace(target)
+    return target
+
+
+def download_image(url, output):
+    target = _save_png(_download(url), output)
+    (Path(output).resolve() / 'download.json').unlink(missing_ok=True)
+    return target
 
 
 class ImageAPIClient:
@@ -127,7 +199,10 @@ class ImageAPIClient:
         request = urllib.request.Request(url, data=body, headers=headers, method='POST')
         try:
             with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
-                payload = json.loads(response.read().decode('utf-8'))
+                payload = _read_json(
+                    response,
+                    '生图请求已被服务商受理，但响应传输中断；请先到服务商后台查看并下载原图，不要直接重复生成，以免重复扣费',
+                )
         except urllib.error.HTTPError as error:
             detail = ''
             try:
@@ -142,14 +217,17 @@ class ImageAPIClient:
             raise BridgeError('生图 API 未返回图片数据：' + json.dumps(payload, ensure_ascii=False)[:300])
         item = items[0] if isinstance(items[0], dict) else {}
         if item.get('b64_json'):
-            raw = base64.b64decode(item['b64_json'])
+            target = _save_png(base64.b64decode(item['b64_json']), out)
         elif item.get('url'):
-            raw = _download(item['url'])
+            download_record = out / 'download.json'
+            download_record.write_text(json.dumps({'url': item['url']}, ensure_ascii=False))
+            try:
+                target = download_image(item['url'], out)
+            except Exception:
+                self.on_event({'type': 'download', 'status': 'failed', 'can_resume': True})
+                raise
         else:
             raise BridgeError('生图 API 响应缺少图片 url/b64_json：' + json.dumps(item, ensure_ascii=False)[:300])
-        target = out / 'result-0.png'
-        target.write_bytes(raw)
-        inspect_sprite_png(target)
         self.on_event({'type': 'api', 'status': 'completed', 'elapsed': round(time.time() - started, 1)})
         return {'model': self.model, 'images': [str(target)], 'completion': 'api_completed'}
 

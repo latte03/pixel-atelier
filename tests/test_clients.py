@@ -9,6 +9,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from PIL import Image
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / 'bridge'
@@ -35,10 +36,12 @@ class MockAPIHandler(BaseHTTPRequestHandler):
         pass
 
     def _json(self, status, payload):
-        body = json.dumps(payload).encode()
+        self._raw(json.dumps(payload).encode(), 'application/json', status)
+
+    def _raw(self, body, content_type, status=200, declared_length=None):
         self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body) if declared_length is None else declared_length))
         self.end_headers()
         self.wfile.write(body)
 
@@ -46,12 +49,29 @@ class MockAPIHandler(BaseHTTPRequestHandler):
         if self.path.endswith('/models'):
             self._json(200, {'data': [{'id': 'img-a'}, {'id': 'img-b'}]})
         elif self.path.startswith('/files/'):
+            self.server.file_requests += 1
             data = self.server.transparent_png
-            self.send_response(200)
-            self.send_header('Content-Type', 'image/png')
-            self.send_header('Content-Length', str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            start = 0
+            status = 200
+            declared_length = len(self.server.transparent_png)
+            if self.server.wrong_file_length:
+                declared_length += 100
+            if self.server.truncate_file_once or self.server.truncate_file_always:
+                self.server.truncate_file_once = False
+                data = data[:len(data) // 2]
+            elif self.headers.get('Range'):
+                start = int(self.headers['Range'].split('=')[1].split('-')[0])
+                data = data[start:]
+                status = 206
+            if status == 206:
+                self.send_response(status)
+                self.send_header('Content-Type', 'image/png')
+                self.send_header('Content-Range', f'bytes {start}-{start + len(data) - 1}/{len(self.server.transparent_png)}')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self._raw(data, 'image/png', declared_length=declared_length)
         else:
             self._json(404, {'error': 'not found'})
 
@@ -59,6 +79,7 @@ class MockAPIHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length)
         if self.path.endswith('/images/generations'):
+            self.server.generation_requests += 1
             payload = json.loads(body)
             if payload.get('prompt') == 'FAIL':
                 self._json(500, {'error': {'message': 'quota exceeded'}})
@@ -67,6 +88,13 @@ class MockAPIHandler(BaseHTTPRequestHandler):
                 self._json(400, {'error': 'model and prompt required'})
                 return
             encoded = base64.b64encode(self.server.transparent_png).decode()
+            response = json.dumps({'created': 1, 'data': [{'b64_json': encoded}]}).encode()
+            if payload.get('prompt') == 'TRUNCATE_COMPLETE':
+                self._raw(response, 'application/json', declared_length=len(response) + 100)
+                return
+            if payload.get('prompt') == 'TRUNCATE_PARTIAL':
+                self._raw(response[:-20], 'application/json', declared_length=len(response))
+                return
             self._json(200, {'created': 1, 'data': [{'b64_json': encoded}]})
         elif self.path.endswith('/images/edits'):
             text = body.decode('latin-1')
@@ -91,6 +119,11 @@ class ClientTestBase(unittest.TestCase):
     def setUpClass(cls):
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), MockAPIHandler)
         cls.server.transparent_png = sprite_png()
+        cls.server.truncate_file_once = False
+        cls.server.truncate_file_always = False
+        cls.server.wrong_file_length = False
+        cls.server.file_requests = 0
+        cls.server.generation_requests = 0
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.base = f'http://127.0.0.1:{cls.server.server_port}/v1'
@@ -189,6 +222,109 @@ class ImageClientTests(ClientTestBase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(rpc.BridgeError, '生图 API 返回 500'):
                 client.generate('FAIL', None, tmp)
+
+    def test_truncated_response_with_complete_json_is_recovered(self):
+        before = self.server.generation_requests
+        client = clients.ImageAPIClient(self.base, 'sk-1', 'img-a')
+        with tempfile.TemporaryDirectory() as tmp:
+            result = client.generate('TRUNCATE_COMPLETE', None, tmp)
+            self.assertTrue(Path(result['images'][0]).is_file())
+        self.assertEqual(self.server.generation_requests - before, 1)
+
+    def test_truncated_response_does_not_retry_generation(self):
+        before = self.server.generation_requests
+        client = clients.ImageAPIClient(self.base, 'sk-1', 'img-a')
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(rpc.BridgeError, '响应传输中断.*不要直接重复生成'):
+                client.generate('TRUNCATE_PARTIAL', None, tmp)
+            self.assertFalse((Path(tmp) / 'result-0.png').exists())
+        self.assertEqual(self.server.generation_requests - before, 1)
+
+    def test_download_resumes_after_truncated_response(self):
+        before = self.server.file_requests
+        self.server.truncate_file_once = True
+        with tempfile.TemporaryDirectory() as tmp:
+            reference_path = Path(tmp) / 'reference.png'
+            reference_path.write_bytes(self.server.transparent_png)
+            client = clients.ImageAPIClient(self.base, 'sk-1', 'img-a')
+            result = client.generate('make it run', reference_path, tmp)
+            self.assertEqual(Path(result['images'][0]).read_bytes(), self.server.transparent_png)
+        self.assertEqual(self.server.file_requests - before, 2)
+
+    def test_complete_png_is_saved_when_content_length_is_wrong(self):
+        before = self.server.file_requests
+        self.server.wrong_file_length = True
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                reference_path = Path(tmp) / 'reference.png'
+                reference_path.write_bytes(self.server.transparent_png)
+                client = clients.ImageAPIClient(self.base, 'sk-1', 'img-a')
+                result = client.generate('make it run', reference_path, tmp)
+                self.assertEqual(Path(result['images'][0]).read_bytes(), self.server.transparent_png)
+                self.assertFalse((Path(tmp) / 'download.json').exists())
+        finally:
+            self.server.wrong_file_length = False
+        self.assertEqual(self.server.file_requests - before, 1)
+
+    def test_download_stops_after_repeated_truncation(self):
+        before = self.server.file_requests
+        self.server.truncate_file_always = True
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                reference_path = Path(tmp) / 'reference.png'
+                reference_path.write_bytes(self.server.transparent_png)
+                client = clients.ImageAPIClient(self.base, 'sk-1', 'img-a')
+                with self.assertRaisesRegex(rpc.BridgeError, '响应未完整传输'):
+                    client.generate('make it run', reference_path, tmp)
+                self.assertFalse((Path(tmp) / 'result-0.png').exists())
+                self.assertTrue((Path(tmp) / 'download.json').is_file())
+        finally:
+            self.server.truncate_file_always = False
+        self.assertEqual(self.server.file_requests - before, 3)
+
+    def test_restart_during_download_keeps_recovery_available(self):
+        import server
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / ('b' * 32)
+            folder.mkdir()
+            (folder / 'download.json').write_text(json.dumps({'url': 'https://example.invalid/image.png'}))
+            job = {'id': folder.name, 'status': 'running', 'events': [{'type': 'download', 'status': 'running'}]}
+            with patch.object(server, 'WORK', Path(tmp)):
+                server.mark_restarted_job(job)
+            self.assertEqual(job['status'], 'failed')
+            self.assertIn('继续下载', job['error'])
+            self.assertTrue(job['events'][-1]['can_resume'])
+
+    def test_saved_download_url_recovers_without_new_generation(self):
+        import server
+
+        generation_before = self.server.generation_requests
+        job_id = 'a' * 32
+        self.server.truncate_file_always = True
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                folder = Path(tmp) / job_id
+                folder.mkdir()
+                reference = folder / 'reference.png'
+                reference.write_bytes(self.server.transparent_png)
+                client = clients.ImageAPIClient(self.base, 'sk-1', 'img-a')
+                with self.assertRaises(rpc.BridgeError):
+                    client.generate('make it run', reference, folder)
+                job = {
+                    'id': job_id, 'status': 'failed', 'error': 'download interrupted',
+                    'created_at': 1, 'finished_at': 2, 'events': [{'type': 'model', 'model': 'img-a'}],
+                }
+                self.server.truncate_file_always = False
+                with patch.object(server, 'WORK', Path(tmp)), patch.dict(server.JOBS, {job_id: job}, clear=True):
+                    server.resume_download(job)
+                self.assertEqual(job['status'], 'completed')
+                self.assertEqual(job['generation_completion'], 'download_recovered')
+                self.assertTrue((folder / 'result-0.png').is_file())
+                self.assertFalse((folder / 'download.json').exists())
+        finally:
+            self.server.truncate_file_always = False
+        self.assertEqual(self.server.generation_requests, generation_before)
 
 
 class LLMClientTests(ClientTestBase):

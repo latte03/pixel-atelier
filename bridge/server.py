@@ -1,5 +1,5 @@
 """Loopback reference-to-image workbench: custom API keys or native Codex app-server."""
-import argparse,base64,hashlib,http.cookies,io,json,queue,re,secrets,threading,time,uuid
+import argparse,base64,hashlib,http.cookies,io,json,os,queue,re,secrets,threading,time,uuid
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from pathlib import Path
 from PIL import Image
@@ -11,13 +11,14 @@ try:from .rpc import BridgeError,CodexClient,inspect_sprite_png
 except ImportError:from rpc import BridgeError,CodexClient,inspect_sprite_png
 try:from .settings import Settings
 except ImportError:from settings import Settings
-try:from .clients import ImageAPIClient,LLMClient,fetch_models
-except ImportError:from clients import ImageAPIClient,LLMClient,fetch_models
+try:from .clients import ImageAPIClient,LLMClient,download_image,fetch_models
+except ImportError:from clients import ImageAPIClient,LLMClient,download_image,fetch_models
 
 try:from .production import Production
 except ImportError:from production import Production
 
-ROOT=Path(__file__).resolve().parents[1];WORK=ROOT/'work'/'image-workbench';WORK.mkdir(parents=True,exist_ok=True)
+ROOT=Path(__file__).resolve().parents[1];WORK=Path(os.environ.get('PIXEL_ATELIER_WORK',ROOT/'work'/'image-workbench'));WORK.mkdir(parents=True,exist_ok=True)
+DIST=ROOT/'frontend'/'dist';ASSETS=DIST/'assets'
 KNIGHT_SAMPLE=ROOT/'examples'/'knight'
 PROJECTS=ProjectStore(WORK/'projects')
 SETTINGS=Settings(WORK/'config.json')
@@ -41,6 +42,43 @@ def complete_job(job,path,model,completion):
         model=model,image_size=size,sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         generation_completion=completion,
     )
+
+
+def mark_restarted_job(job):
+    can_resume=(WORK/job['id']/'download.json').is_file()
+    message='服务已重启，生图下载链接已保留，请继续下载。' if can_resume else '服务已重启，请重新提交。'
+    job.update(status='failed',error=message)
+    if can_resume:
+        job.setdefault('events',[]).append({'type':'download','status':'failed','can_resume':True})
+
+
+def resume_download(job):
+    folder=WORK/job['id']
+    record_path=folder/'download.json'
+    try:
+        url=json.loads(record_path.read_text()).get('url')
+    except (OSError,ValueError,AttributeError) as error:
+        raise BridgeError('没有可恢复的生图下载链接') from error
+    if not isinstance(url,str) or not url:
+        raise BridgeError('生图下载链接无效')
+    with LOCK:
+        if job.get('status')!='failed' or generation_busy():
+            raise BridgeError('当前任务状态不允许继续下载')
+        job.update(status='running');job.pop('error',None)
+        job.setdefault('events',[]).append({'type':'download','status':'running'})
+        record(job)
+    try:
+        path=download_image(url,folder)
+        model=next((e.get('model') for e in job.get('events',[]) if e.get('type')=='model'),None)
+        complete_job(job,path,model,'download_recovered')
+        job['events'].append({'type':'download','status':'completed'})
+        return job
+    except Exception as error:
+        job.update(status='failed',error=str(error))
+        job['events'].append({'type':'download','status':'failed','can_resume':record_path.is_file()})
+        raise
+    finally:
+        job['finished_at']=time.time();record(job)
 
 
 def recover_timed_out_job(job):
@@ -200,10 +238,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith('/?'):self.path='/'
         if not self.valid_host():return self.respond(403,{'error':'Invalid host'})
         if self.path=='/':
-            body=(ROOT/'bridge/workbench.html').read_bytes();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('Set-Cookie','pixel_bridge='+TOKEN+'; HttpOnly; SameSite=Strict; Path=/');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
-        if self.path in ['/workbench.css','/workbench.js','/beginner.css','/beginner.js','/character.js','/character.css','/atelier.css','/atelier.js','/simple-editor.css','/simple-editor.js','/delivery.css','/delivery.js','/production.js','/production.css','/settings.css','/settings.js']:
-            kind='text/css' if self.path.endswith('.css') else 'application/javascript'
-            return self.respond(200,(ROOT/'bridge'/self.path[1:]).read_bytes(),kind)
+            index=DIST/'index.html'
+            if not index.is_file():
+                return self.respond(503,'<!doctype html><meta charset="utf-8"><title>Pixel Atelier</title><p>前端尚未构建。请在项目根目录运行 <code>pnpm build</code> 后重新启动服务。</p>','text/html; charset=utf-8')
+            body=index.read_bytes();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('Set-Cookie','pixel_bridge='+TOKEN+'; HttpOnly; SameSite=Strict; Path=/');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
+        if self.path.startswith('/assets/'):
+            path=(ASSETS/self.path[len('/assets/'):]).resolve()
+            if ASSETS.resolve() not in path.parents or not path.is_file():return self.respond(404,{'error':'Asset not found'})
+            kind={'.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'}.get(path.suffix,'application/octet-stream')
+            body=path.read_bytes();self.send_response(200);self.send_header('Content-Type',kind);self.send_header('Cache-Control','public, max-age=31536000, immutable');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
         if self.path=='/health':return self.respond(200,{'service':'pixel-codex-bridge','transport':SETTINGS.raw().get('provider','custom'),'ready':True,'generation_verified':any(j.get('status')=='completed' for j in JOBS.values())})
         if not self.authorized():return self.respond(401,{'error':'Open the workbench first'})
         if self.path=='/config':return self.respond(200,SETTINGS.masked())
@@ -261,7 +304,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host() or not self.authorized():return self.respond(403,{'error':'Unauthorized'})
         origin=self.headers.get('Origin')
         if origin and origin!='http://'+self.headers.get('Host',''):return self.respond(403,{'error':'Invalid origin'})
-        if self.path not in ['/production','/jobs','/references','/references/gif-frames','/exports','/projects','/projects/knight','/projects/archer','/projects/master','/projects/idle-gif','/projects/save','/projects/clone','/projects/freeze','/projects/export','/config','/config/test']:return self.respond(404,{'error':'Not found'})
+        resume_match=re.fullmatch(r'/jobs/([a-f0-9]{32})/resume-download',self.path)
+        if not resume_match and self.path not in ['/production','/jobs','/references','/references/gif-frames','/exports','/projects','/projects/knight','/projects/archer','/projects/master','/projects/idle-gif','/projects/save','/projects/clone','/projects/freeze','/projects/export','/config','/config/test']:return self.respond(404,{'error':'Not found'})
         try:
             size=int(self.headers.get('Content-Length','0'))
             if not 0<size<=(80 if self.path.startswith('/projects') or self.path=='/production'else 17 if self.path=='/references/gif-frames'else 16)*1024*1024:raise ValueError('文件过大或请求为空')
@@ -294,6 +338,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/exports':
                 eid=uuid.uuid4().hex;conf=export_animation(data,WORK/'exports'/eid)
                 return self.respond(201,{'id':eid,'gif_url':'/export/'+eid+'/preview.gif','zip_url':'/export/'+eid+'/assets.zip','atlas_url':'/export/'+eid+'/atlas.png','config_url':'/export/'+eid+'/animation.json','frame_count':len(conf['frames']),'duration_ms':conf['duration_ms'],'palette_size':len(conf['palette'])})
+            if resume_match:
+                job=JOBS.get(resume_match.group(1))
+                if not job:raise ValueError('生成任务不存在')
+                return self.respond(200,resume_download(job))
             job=enqueue_generation(data)
             self.respond(202,job)
         except Conflict as e:self.respond(409,{'error':str(e)})
@@ -304,7 +352,7 @@ def main():
     for f in WORK.glob('*/job.json'):
         try:
             j=json.loads(f.read_text())
-            if j['status'] in ['queued','running']:j.update(status='failed',error='服务已重启，请重新提交。');record(j)
+            if j['status'] in ['queued','running']:mark_restarted_job(j);record(j)
             recover_timed_out_job(j)
             JOBS[j['id']]=j
         except (ValueError,KeyError):pass
